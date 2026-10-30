@@ -153,6 +153,8 @@ class ScreenshotTest {
     }
 
     @Test
+    // On API 35 Robolectric never lets the dialog window go idle.
+    @Config(sdk = [33])
     fun backupDialog() {
         show { open(Screen.Details(details())) }
         compose.onNodeWithText("Create encrypted backup").performClick()

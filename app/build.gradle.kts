@@ -59,6 +59,12 @@ kotlin {
 tasks.withType<Test>().configureEach {
     // Where ScreenshotTest writes its PNGs.
     systemProperty("screenshotDir", rootProject.file("docs/screenshots").path)
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showCauses = true
+        showStackTraces = true
+    }
 }
 
 dependencies {

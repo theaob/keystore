@@ -1,13 +1,12 @@
 package dev.keystore.app.ui
 
 import android.graphics.Bitmap
-import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.test.SemanticsNodeInteraction
-import androidx.compose.ui.test.captureToImage
-import androidx.compose.ui.test.isDialog
-import androidx.compose.ui.test.junit4.createComposeRule
+import android.graphics.Canvas
+import android.graphics.Color
+import android.view.View
+import androidx.activity.ComponentActivity
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import dev.keystore.app.ui.theme.KeystoreTheme
 import dev.keystore.core.DistinguishedName
@@ -20,6 +19,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import org.robolectric.shadows.ShadowDialog
+import org.robolectric.shadows.ShadowLooper
 import java.io.File
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
@@ -33,7 +34,7 @@ import java.time.ZonedDateTime
 @Config(sdk = [35], qualifiers = "w400dp-h840dp-xhdpi")
 class ScreenshotTest {
     @get:Rule
-    val compose = createComposeRule()
+    val compose = createAndroidComposeRule<ComponentActivity>()
 
     private val outputDir = File(System.getProperty("screenshotDir") ?: "build/screenshots").apply { mkdirs() }
 
@@ -67,30 +68,57 @@ class ScreenshotTest {
     private fun show(dark: Boolean = false, setUp: KeystoreViewModel.() -> Unit): KeystoreViewModel {
         val viewModel = KeystoreViewModel(RuntimeEnvironment.getApplication())
         viewModel.setUp()
+        // Don't let idling wait on animations such as the text cursor blink.
+        compose.mainClock.autoAdvance = false
         compose.setContent {
             KeystoreTheme(darkTheme = dark, dynamicColor = false) {
                 KeystoreApp(viewModel)
             }
         }
-        compose.waitForIdle()
+        settle()
         return viewModel
     }
 
-    private fun SemanticsNodeInteraction.save(name: String) {
-        val bitmap = captureToImage().asAndroidBitmap()
+    private fun settle() {
+        compose.mainClock.advanceTimeBy(2_000)
+        ShadowLooper.idleMainLooper()
+        compose.waitForIdle()
+    }
+
+    /**
+     * Compose's captureToImage() waits for a hardware redraw that Robolectric never delivers,
+     * so draw the view hierarchy into a software canvas instead.
+     */
+    private fun render(view: View): Bitmap =
+        Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888).also { view.draw(Canvas(it)) }
+
+    private fun saveScreen(name: String, withDialog: Boolean = false) {
+        val bitmap = render(compose.activity.window.decorView)
+        if (withDialog) {
+            val dialogView = checkNotNull(ShadowDialog.getLatestDialog()?.window?.decorView) { "No dialog shown" }
+            val canvas = Canvas(bitmap)
+            canvas.drawColor(Color.argb(128, 0, 0, 0))
+            val dialog = render(dialogView)
+            canvas.drawBitmap(
+                dialog,
+                (bitmap.width - dialog.width) / 2f,
+                (bitmap.height - dialog.height) / 2f,
+                null,
+            )
+        }
         File(outputDir, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
     @Test
     fun home() {
         show { }
-        compose.onRoot().save("01-home")
+        saveScreen("01-home")
     }
 
     @Test
     fun homeDark() {
         show(dark = true) { }
-        compose.onRoot().save("01-home-dark")
+        saveScreen("01-home-dark")
     }
 
     @Test
@@ -108,28 +136,28 @@ class ScreenshotTest {
                 )
             }
         }
-        compose.onRoot().save("02-generate-form")
+        saveScreen("02-generate-form")
     }
 
     @Test
     @Config(qualifiers = "w400dp-h2900dp-xhdpi")
     fun keystoreDetails() {
         show { open(Screen.Details(details())) }
-        compose.onRoot().save("03-details")
+        saveScreen("03-details")
     }
 
     @Test
     fun keystoreDetailsDark() {
         show(dark = true) { open(Screen.Details(details())) }
-        compose.onRoot().save("03-details-dark")
+        saveScreen("03-details-dark")
     }
 
     @Test
     fun backupDialog() {
         show { open(Screen.Details(details())) }
         compose.onNodeWithText("Create encrypted backup").performClick()
-        compose.waitForIdle()
-        compose.onNode(isDialog()).save("04-backup-dialog")
+        settle()
+        saveScreen("04-backup-dialog", withDialog = true)
     }
 
     @Test
@@ -140,7 +168,7 @@ class ScreenshotTest {
                 it.copy(fileName = "release-key.jks", bytes = keystore.bytes, storePassword = "secret-pass")
             }
         }
-        compose.onRoot().save("05-backup-existing")
+        saveScreen("05-backup-existing")
     }
 
     @Test
@@ -151,6 +179,6 @@ class ScreenshotTest {
                 it.copy(fileName = "upload.ksbackup", bytes = byteArrayOf(1), passphrase = "my backup passphrase")
             }
         }
-        compose.onRoot().save("06-restore")
+        saveScreen("06-restore")
     }
 }

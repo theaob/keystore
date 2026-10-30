@@ -1,0 +1,3 @@
+<resources>
+    <style name="Theme.KeystoreGenerator" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

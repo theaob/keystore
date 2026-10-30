@@ -204,7 +204,7 @@ fun DetailsScreen(
 }
 
 @Composable
-private fun BackupDialog(
+internal fun BackupDialog(
     passwordsKnown: Boolean,
     onDismiss: () -> Unit,
     onConfirm: (passphrase: String, includePasswords: Boolean) -> Unit,

@@ -33,6 +33,12 @@ android {
         compose = true
     }
 
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
+
     packaging {
         resources {
             // Duplicated between the Bouncy Castle jars.
@@ -50,6 +56,11 @@ kotlin {
     }
 }
 
+tasks.withType<Test>().configureEach {
+    // Where ScreenshotTest writes its PNGs.
+    systemProperty("screenshotDir", rootProject.file("docs/screenshots").path)
+}
+
 dependencies {
     implementation(project(":keystore-core"))
 
@@ -64,4 +75,10 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
 }

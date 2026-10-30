@@ -15,9 +15,13 @@ private val LightColors = lightColorScheme(primary = Color(0xFF2E7D32), secondar
 private val DarkColors = darkColorScheme(primary = Color(0xFF81C784), secondary = Color(0xFFB0BEC5))
 
 @Composable
-fun KeystoreTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
+fun KeystoreTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    dynamicColor: Boolean = true,
+    content: @Composable () -> Unit,
+) {
     val colors = when {
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }

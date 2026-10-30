@@ -18,7 +18,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 
@@ -26,36 +25,65 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 @Composable
 fun KeystoreApp(viewModel: KeystoreViewModel = viewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val result = state.result
+    val screen = state.screen
 
-    BackHandler(enabled = result != null) { viewModel.startOver() }
+    BackHandler(enabled = screen != Screen.Home) { viewModel.goHome() }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (result == null) "Keystore Generator" else "Keystore ready") },
+                title = {
+                    Text(
+                        when (screen) {
+                            Screen.Home -> "Keystore Generator"
+                            Screen.Generate -> "New keystore"
+                            Screen.Import -> "Back up a keystore"
+                            Screen.Restore -> "Restore a backup"
+                            is Screen.Details -> screen.details.title
+                        },
+                    )
+                },
                 navigationIcon = {
-                    if (result != null) {
-                        IconButton(onClick = viewModel::startOver) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Start over")
+                    if (screen != Screen.Home) {
+                        IconButton(onClick = viewModel::goHome) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
                     }
                 },
             )
         },
     ) { padding ->
-        if (result == null) {
-            FormScreen(
+        when (screen) {
+            Screen.Home -> HomeScreen(onOpen = viewModel::open, contentPadding = padding)
+            Screen.Generate -> FormScreen(
                 state = state,
                 onFormChange = viewModel::updateForm,
                 onGenerateStorePassword = viewModel::generateStorePassword,
                 onGenerateKeyPassword = viewModel::generateKeyPassword,
                 onGenerate = viewModel::generate,
-                modifier = Modifier,
                 contentPadding = padding,
             )
-        } else {
-            ResultScreen(result = result, contentPadding = padding)
+            Screen.Import -> ImportScreen(
+                state = state.importing,
+                onFileChosen = viewModel::importFileChosen,
+                onChange = viewModel::updateImport,
+                onVerify = viewModel::verifyImport,
+                contentPadding = padding,
+            )
+            Screen.Restore -> RestoreScreen(
+                state = state.restore,
+                onFileChosen = viewModel::backupFileChosen,
+                onChange = viewModel::updateRestore,
+                onRestore = viewModel::restoreBackup,
+                contentPadding = padding,
+            )
+            is Screen.Details -> DetailsScreen(
+                details = screen.details,
+                backup = state.backup,
+                onCreateBackup = viewModel::createBackup,
+                onPendingBackupHandled = viewModel::pendingBackupHandled,
+                contentPadding = padding,
+            )
         }
     }
 }

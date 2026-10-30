@@ -20,16 +20,6 @@ import java.time.ZonedDateTime
 import java.util.Date
 import javax.security.auth.x500.X500Principal
 
-/** Result of [KeystoreGenerator.generate]. */
-class GeneratedKeystore(
-    val bytes: ByteArray,
-    val format: KeystoreFormat,
-    val alias: String,
-    val certificate: X509Certificate,
-) {
-    val info: CertificateInfo by lazy { CertificateInfo.from(certificate) }
-}
-
 /**
  * Creates an upload/signing keystore equivalent to:
  *
@@ -47,7 +37,7 @@ class KeystoreGenerator(
 ) {
     private val bouncyCastle = BouncyCastleProvider()
 
-    fun generate(request: KeystoreRequest): GeneratedKeystore {
+    fun generate(request: KeystoreRequest): KeystoreFile {
         val errors = KeystoreValidator.validate(request)
         require(errors.isEmpty()) { errors.joinToString("; ") { "${it.field}: ${it.message}" } }
 
@@ -56,7 +46,7 @@ class KeystoreGenerator(
         val alias = request.alias.trim()
 
         val bytes = when (request.format) {
-            KeystoreFormat.JKS -> JksWriter.write(
+            KeystoreFormat.JKS -> JksFormat.write(
                 alias = alias,
                 privateKey = keyPair.private,
                 chain = listOf(certificate),
@@ -76,7 +66,7 @@ class KeystoreGenerator(
                 }
             }
         }
-        return GeneratedKeystore(bytes, request.format, alias, certificate)
+        return KeystoreFile(bytes, request.format, alias, certificate)
     }
 
     private fun generateKeyPair(algorithm: KeyAlgorithm): KeyPair {

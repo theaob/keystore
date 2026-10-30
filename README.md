@@ -24,18 +24,43 @@ keytool -genkeypair -v -storetype JKS -keystore upload.jks -alias upload \
 - Exports the **upload certificate** as PEM (`keytool -export -rfc`)
 - Ready-to-paste `keystore.properties`, `build.gradle.kts` `signingConfig`, `jarsigner` command
   and a Base64 copy for CI secrets
+- **Encrypted backups** (`.ksbackup`) of new or existing keystores, and restore from them (see below)
 - Screenshots blocked (`FLAG_SECURE`), backups disabled, sensitive clipboard entries hidden on Android 13+
+
+## Backups
+
+Losing an upload key means asking Google Play support for a reset; losing an app signing key
+without Play App Signing means you can never update the app. The app can back up:
+
+- a keystore it just generated, or
+- an **existing** `.jks`/`.p12` file: it first checks that the passwords unlock the key, so the
+  backup is known to be usable.
+
+A `.ksbackup` file is a ZIP containing the keystore, its certificate (PEM), `keystore.properties`
+with the passwords (optional) and a README with the fingerprints, encrypted with a passphrase
+using AES-256-CBC and PBKDF2-HMAC-SHA256 (600,000 iterations). The format is exactly what
+`openssl enc` produces, so a backup stays recoverable even without this app:
+
+```sh
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -md sha256 -in upload.ksbackup -out backup.zip
+unzip backup.zip
+```
+
+**Restore from a backup** in the app decrypts it, verifies the keystore against the stored
+passwords and checksum, and lets you save the keystore file again. Keep backups in more than one
+place (cloud storage and offline), and the passphrase in a password manager.
 
 ## Project layout
 
 | Module          | What it is                                                                 |
 |-----------------|----------------------------------------------------------------------------|
-| `keystore-core` | Pure Kotlin/JVM: key generation, certificate, JKS/PKCS#12 writer, snippets |
+| `keystore-core` | Pure Kotlin/JVM: key generation, JKS/PKCS#12 reading and writing, backups   |
 | `app`           | Jetpack Compose UI (minSdk 26, targetSdk 36)                               |
 
-Android's runtime has no JKS `KeyStore` implementation, so `JksWriter` serialises the format
+Android's runtime has no JKS `KeyStore` implementation, so `JksFormat` reads and writes the format
 directly, following OpenJDK's `JavaKeyStore`/`KeyProtector`. The tests load the output with the
-JDK's own JKS implementation, list it with `keytool`, and sign and verify a bundle with `jarsigner`.
+JDK's own JKS implementation, list it with `keytool`, sign and verify a bundle with `jarsigner`,
+read keystores created by `keytool`, and decrypt backups with the `openssl` CLI.
 
 ## Build
 

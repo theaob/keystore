@@ -231,12 +231,14 @@ private fun DnField(label: String, value: String, onValueChange: (String) -> Uni
 }
 
 @Composable
-private fun PasswordField(
+internal fun PasswordField(
     label: String,
     value: String,
     error: String?,
     onValueChange: (String) -> Unit,
-    onGenerate: () -> Unit,
+    onGenerate: (() -> Unit)?,
+    hint: String = "At least 6 characters. Tap the dice for a strong random one.",
+    imeAction: ImeAction = ImeAction.Next,
 ) {
     var visible by rememberSaveable { mutableStateOf(false) }
     OutlinedTextField(
@@ -245,9 +247,9 @@ private fun PasswordField(
         label = { Text(label) },
         singleLine = true,
         isError = error != null,
-        supportingText = { Text(error ?: "At least 6 characters. Tap the dice for a strong random one.") },
+        supportingText = { Text(error ?: hint) },
         visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = imeAction),
         trailingIcon = {
             Row {
                 IconButton(onClick = { visible = !visible }) {
@@ -256,11 +258,13 @@ private fun PasswordField(
                         contentDescription = if (visible) "Hide password" else "Show password",
                     )
                 }
-                IconButton(onClick = {
-                    onGenerate()
-                    visible = true
-                }) {
-                    Icon(Icons.Filled.Casino, contentDescription = "Generate password")
+                if (onGenerate != null) {
+                    IconButton(onClick = {
+                        onGenerate()
+                        visible = true
+                    }) {
+                        Icon(Icons.Filled.Casino, contentDescription = "Generate password")
+                    }
                 }
             }
         },

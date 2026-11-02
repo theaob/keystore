@@ -1,8 +1,8 @@
 # Keystore Manager
 
 An Android app that creates the signing keystore you need to sign an Android App Bundle (AAB)
-for Google Play, without a computer or `keytool`. Everything happens on the device; the app has
-no internet permission.
+for Google Play, without a computer or `keytool`. Keys never leave the device; the only network
+use is an AdMob banner on the home screen.
 
 It produces the same thing as:
 

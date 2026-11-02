@@ -36,10 +36,11 @@ Suggested category: **Tools**. Tags: developer tools, security.
 | Section | Answer |
 |---|---|
 | Privacy policy | URL of `PRIVACY.md` (see below) |
-| Ads | **No**, the app contains no ads |
+| Ads | **Yes**, the app contains ads (AdMob banner on the home screen) |
 | App access | **All functionality is available without special access** (no login) |
 | Content rating | Category **"All other app types"** (utility/tool); answer **No** to every question (no violence, sexual content, profanity, drugs, gambling, user interaction or sharing of location). Expected rating: Everyone / PEGI 3 |
-| Target audience | **18 and over** (developer tool, not designed for children) |
+| Target audience | **18 and over** (developer tool, not designed for children; keeps the app out of the Families ad requirements) |
+| Advertising ID | **Yes**, used for **Advertising or marketing** (AdMob). The `AD_ID` permission comes from the AdMob SDK |
 | News app | No |
 | Government app | No |
 | Financial features | None |
@@ -48,22 +49,53 @@ Suggested category: **Tools**. Tags: developer tools, security.
 
 ### Data safety
 
-- Does your app collect or share any of the required user data types? **No.**
-  - The app has no internet permission. Keystores, passwords, profiles and backups are stored only
-    on the device, or in files the user saves through the system file picker. Google's guidance
-    excludes data that is processed only on the device and never sent off it.
-- Security practices:
-  - Is all user data encrypted in transit? Not applicable, because nothing is transmitted. The
-    form doesn't ask when nothing is collected.
-  - Can users request deletion? Data is deleted in the app (delete button) or by uninstalling.
-    Not required when no data is collected.
+The app's own data (keystores, passwords, profiles, backups) is processed only on the device, so
+it is not "collected" under Play's definition. The **AdMob SDK** does collect and share data.
+Declare what Google lists for the Mobile Ads SDK
+([AdMob data disclosure](https://developers.google.com/admob/android/privacy/play-data-disclosure)),
+which currently is:
+
+| Data type | Collected | Shared | Purposes |
+|---|---|---|---|
+| Location → Approximate location (from IP address) | Yes | Yes | Advertising or marketing, Analytics, Fraud prevention, security and compliance |
+| App activity → App interactions | Yes | Yes | Advertising or marketing, Analytics, Fraud prevention, security and compliance |
+| App info and performance → Crash logs, Diagnostics | Yes | Yes | Analytics, Fraud prevention, security and compliance |
+| Device or other IDs | Yes | Yes | Advertising or marketing, Analytics, Fraud prevention, security and compliance |
+
+- Is data collection required or optional? **Required** (ads are always shown). Personalisation
+  is consent-based in the EEA, UK and Switzerland.
+- Is all user data encrypted in transit? **Yes.**
+- Do you provide a way for users to request deletion? Ad data is held by Google. Users can reset
+  or delete their advertising ID in Android Settings. Answer per Google's current guidance on
+  the disclosure page above.
+
+Recheck that page before submitting, since Google updates it with SDK releases.
 
 ### Permissions
 
-The app declares no permissions itself. Its libraries add `USE_BIOMETRIC` and `USE_FINGERPRINT`
-(`androidx.biometric`, for the unlock prompt) and AndroidX's internal
-`DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`. None of these needs a Play declaration form. Check the
-final list under **App bundle explorer → Permissions** after uploading.
+The app declares no permissions itself. Its libraries add:
+- `INTERNET`, `ACCESS_NETWORK_STATE` and `AD_ID` (AdMob): covered by the Advertising ID answer above
+- `USE_BIOMETRIC` and `USE_FINGERPRINT` (`androidx.biometric`, for the unlock prompt)
+- AndroidX's internal `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`
+
+Check the final list under **App bundle explorer → Permissions** after uploading.
+
+## AdMob
+
+- **IDs:** set `admob.appId` (`ca-app-pub-…~…`) and `admob.bannerId` (`ca-app-pub-…/…`) in
+  `gradle.properties`. Debug builds always use Google's test IDs. Release builds use test IDs,
+  with a build warning, until both are set.
+- **Link the app:** in AdMob → Apps → App settings, link it to the Play listing once it's
+  published.
+- **app-ads.txt:** AdMob verifies the app through `app-ads.txt` at the root of the developer
+  website set in Play Console. Use `https://theaob.github.io` as the developer website and
+  publish `app-ads.txt` at `https://theaob.github.io/app-ads.txt`. That means a
+  `theaob/theaob.github.io` repository containing an `app-ads.txt` file with the line AdMob
+  shows you (AdMob → Apps → app-ads.txt). It looks like:
+  `google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0`
+- **Consent:** in AdMob → Privacy & messaging, create a **European regulations** (GDPR) message
+  for this app. The app shows it through Google's User Messaging Platform. Without a published
+  message, users in the EEA/UK won't be asked and won't receive personalised ads.
 
 ## Privacy policy URL
 

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- No INTERNET permission: keys are generated and saved entirely on-device. -->
+<!-- Keys are generated and stored on-device only. The INTERNET permission comes from the
+     AdMob library and is used solely for the banner ad on the home screen. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <application
@@ -11,6 +12,9 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.KeystoreManager">
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="${admobAppId}" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

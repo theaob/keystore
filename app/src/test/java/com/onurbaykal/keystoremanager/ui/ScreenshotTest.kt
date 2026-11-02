@@ -3,12 +3,17 @@ package com.onurbaykal.keystoremanager.ui
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Rect
 import android.view.View
+import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.platform.ViewRootForTest
+import androidx.compose.ui.semantics.SemanticsNode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import com.onurbaykal.keystoremanager.ui.theme.KeystoreTheme
 import com.onurbaykal.keystoremanager.core.BackupRecord
 import com.onurbaykal.keystoremanager.core.CertificateProfileStore
@@ -265,12 +270,10 @@ class ScreenshotTest {
     }
 
     @Test
-    @Config(qualifiers = "w360dp-h640dp-xxhdpi")
+    @Config(qualifiers = "w360dp-h2400dp-xxhdpi")
     fun playCertificateProfile() {
         showFormWithProfile()
-        compose.onNodeWithText("Certificate").performScrollTo()
-        settle()
-        saveScreen("2_certificate_profile", directory = playDir)
+        saveScrolledScreen("2_certificate_profile", anchorText = "Certificate")
     }
 
     @Test
@@ -281,12 +284,50 @@ class ScreenshotTest {
     }
 
     @Test
-    @Config(qualifiers = "w360dp-h640dp-xxhdpi")
+    @Config(qualifiers = "w360dp-h2400dp-xxhdpi")
     fun playFingerprints() {
         show { open(Screen.Details(details())) }
-        compose.onNodeWithText("Fingerprints").performScrollTo()
-        settle()
-        saveScreen("4_fingerprints", directory = playDir)
+        saveScrolledScreen("4_fingerprints", anchorText = "Fingerprints")
+    }
+
+    /**
+     * A phone-sized (1080x1920) screenshot as if scrolled to [anchorText]. Compose's test
+     * synchronisation never goes idle after scrolling under Robolectric, so instead the screen is
+     * rendered on a tall window and the visible part is cropped out under the app bar.
+     */
+    private fun saveScrolledScreen(name: String, anchorText: String) {
+        val full = render(compose.activity.window.decorView)
+        val density = compose.activity.resources.displayMetrics.density
+        val width = (360 * density).toInt()
+        val height = (640 * density).toInt()
+        val appBar = (64 * density).toInt()
+        val anchor = findTextTop(anchorText) ?: error("No node with text $anchorText")
+        val contentTop = (anchor - 16 * density).toInt().coerceIn(appBar, full.height - (height - appBar))
+
+        val frame = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        Canvas(frame).apply {
+            val content = Rect(0, contentTop, width, contentTop + height - appBar)
+            drawBitmap(full, content, Rect(0, appBar, width, height), null)
+            drawBitmap(full, Rect(0, 0, width, appBar), Rect(0, 0, width, appBar), null)
+        }
+        File(playDir, "$name.png").outputStream().use { frame.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    /** Reads the layout tree directly, without the test framework's idle synchronisation. */
+    private fun findTextTop(text: String): Float? {
+        fun findRoot(view: View): ViewRootForTest? = when (view) {
+            is ViewRootForTest -> view
+            is ViewGroup -> (0 until view.childCount).firstNotNullOfOrNull { findRoot(view.getChildAt(it)) }
+            else -> null
+        }
+
+        fun search(node: SemanticsNode): SemanticsNode? {
+            val texts = node.config.getOrNull(SemanticsProperties.Text).orEmpty()
+            if (texts.any { it.text == text }) return node
+            return node.children.firstNotNullOfOrNull { search(it) }
+        }
+        val root = findRoot(compose.activity.window.decorView) ?: return null
+        return search(root.semanticsOwner.unmergedRootSemanticsNode)?.boundsInRoot?.top
     }
 
     @Test

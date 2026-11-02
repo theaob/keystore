@@ -18,6 +18,7 @@ concurrency:
 jobs:
   screenshots:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -52,6 +53,7 @@ jobs:
             echo "Screenshots unchanged"
           else
             git commit -m "Update UI screenshots [skip ci]"
-            git pull --rebase origin "${GITHUB_REF_NAME}"
+            # Freshly rendered screenshots win over any concurrent screenshot commit.
+            git pull --rebase -X theirs origin "${GITHUB_REF_NAME}"
             git push origin "HEAD:${GITHUB_REF_NAME}"
           fi

@@ -22,12 +22,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -59,7 +61,9 @@ fun DetailsScreen(
     details: KeystoreDetails,
     backup: BackupState,
     onCreateBackup: (details: KeystoreDetails, passphrase: String, includePasswords: Boolean) -> Unit,
-    onPendingBackupHandled: () -> Unit,
+    onPendingBackupHandled: (saved: Boolean) -> Unit,
+    vault: VaultState,
+    onKeepInApp: (KeystoreDetails) -> Unit,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
@@ -79,8 +83,8 @@ fun DetailsScreen(
         ActivityResultContracts.CreateDocument("application/octet-stream"),
     ) { uri ->
         val pending = backup.pending
-        if (uri != null && pending != null) writeFile(context, uri, pending.bytes, "Backup saved")
-        onPendingBackupHandled()
+        val saved = uri != null && pending != null && writeFile(context, uri, pending.bytes, "Backup saved")
+        onPendingBackupHandled(saved)
     }
 
     // As soon as an encrypted backup is ready, ask where to save it.
@@ -126,6 +130,22 @@ fun DetailsScreen(
             onClick = { showBackupDialog = true },
         )
         ErrorText(backup.error?.let { "Backup failed: $it" })
+        if (details.storedId == null) {
+            OutlinedButton(
+                onClick = { onKeepInApp(details) },
+                enabled = !vault.saving,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (vault.saving) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(Icons.Filled.Key, contentDescription = null)
+                }
+                Spacer(Modifier.size(8.dp))
+                Text("Keep in this app")
+            }
+            ErrorText(vault.error?.let { "Couldn't keep it in the app: $it" })
+        }
         OutlinedButton(
             onClick = { savePem.launch(KeystoreBackup.certificateFileName(details.fileName)) },
             modifier = Modifier.fillMaxWidth(),
@@ -138,6 +158,13 @@ fun DetailsScreen(
             InfoRow("Alias", keystore.alias)
             InfoRow("Store password", details.storePassword ?: "Not known", sensitive = details.storePassword != null)
             InfoRow("Key password", details.keyPassword ?: "Not known", sensitive = details.keyPassword != null)
+            details.backup?.let { record ->
+                InfoRow(
+                    "Backup passphrase (${record.fileName}, ${dateFormat.format(record.createdAt)})",
+                    record.passphrase,
+                    sensitive = true,
+                )
+            }
         }
 
         Section("Certificate") {
@@ -227,7 +254,8 @@ internal fun BackupDialog(
             ) {
                 Text(
                     "The backup contains the keystore, its certificate and a README, encrypted with AES-256. " +
-                        "Choose a passphrase you won't lose: without it the backup can't be opened.",
+                        "Choose a passphrase you won't lose: without it the backup can't be opened. The app also " +
+                        "remembers it with this keystore once the backup is saved.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 PasswordField(
@@ -333,11 +361,13 @@ private fun CodeBlock(label: String, code: String, sensitive: Boolean) {
 private fun groupFingerprint(fingerprint: String): String =
     fingerprint.split(":").chunked(8).joinToString("\n") { it.joinToString(":") }
 
-private fun writeFile(context: Context, uri: Uri, bytes: ByteArray, message: String) {
+/** @return whether the file was written. */
+private fun writeFile(context: Context, uri: Uri, bytes: ByteArray, message: String): Boolean {
     val result = runCatching {
         context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(bytes) }
             ?: error("Could not open file")
     }
     val text = result.fold({ message }, { "Save failed: ${it.message}" })
     Toast.makeText(context, text, Toast.LENGTH_LONG).show()
+    return result.isSuccess
 }

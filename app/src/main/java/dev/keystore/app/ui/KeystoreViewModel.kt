@@ -5,7 +5,12 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import dev.keystore.app.vault.AndroidKeyWrapper
+import dev.keystore.app.vault.needsUnlock
 import dev.keystore.core.BackupException
+import dev.keystore.core.BackupRecord
+import dev.keystore.core.CertificateProfile
+import dev.keystore.core.CertificateProfileStore
 import dev.keystore.core.DistinguishedName
 import dev.keystore.core.KeyAlgorithm
 import dev.keystore.core.KeystoreBackup
@@ -16,9 +21,12 @@ import dev.keystore.core.KeystoreLoadException
 import dev.keystore.core.KeystoreReader
 import dev.keystore.core.KeystoreRequest
 import dev.keystore.core.KeystoreValidator
+import dev.keystore.core.KeystoreVault
 import dev.keystore.core.PasswordGenerator
 import dev.keystore.core.ValidationError
+import dev.keystore.core.VaultEntrySummary
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,6 +34,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.time.Instant
 import java.time.Year
 
 data class FormState(
@@ -42,7 +52,21 @@ data class FormState(
     val locality: String = "",
     val state: String = "",
     val countryCode: String = "",
+    /** Profile the certificate fields came from; cleared as soon as they're edited. */
+    val profileId: String? = null,
 ) {
+    val distinguishedName: DistinguishedName
+        get() = DistinguishedName(commonName, organizationalUnit, organization, locality, state, countryCode)
+
+    fun withDistinguishedName(dn: DistinguishedName) = copy(
+        commonName = dn.commonName,
+        organizationalUnit = dn.organizationalUnit,
+        organization = dn.organization,
+        locality = dn.locality,
+        state = dn.state,
+        countryCode = dn.countryCode,
+    )
+
     val effectiveKeyPassword: String
         get() = if (keyPasswordSameAsStore || format == KeystoreFormat.PKCS12) storePassword else keyPassword
 
@@ -59,6 +83,20 @@ data class KeystoreDetails(
     val keyPassword: String?,
     val title: String,
     val notice: String,
+    /** Id in the in-app vault, or `null` if this keystore isn't kept in the app. */
+    val storedId: String? = null,
+    /** Passphrase of the latest `.ksbackup` made of this keystore, if known. */
+    val backup: BackupRecord? = null,
+)
+
+data class VaultState(
+    val entries: List<VaultEntrySummary> = emptyList(),
+    /** Entry being opened or saved, for progress indicators. */
+    val busyId: String? = null,
+    val saving: Boolean = false,
+    /** Entry waiting for the user to unlock with a biometric or their screen lock. */
+    val unlockFor: String? = null,
+    val error: String? = null,
 )
 
 data class ImportState(
@@ -80,7 +118,7 @@ data class RestoreState(
 )
 
 /** An encrypted backup waiting for the user to pick where to save it. */
-class PendingBackup(val fileName: String, val bytes: ByteArray)
+class PendingBackup(val fileName: String, val bytes: ByteArray, val passphrase: String)
 
 data class BackupState(
     val creating: Boolean = false,
@@ -105,6 +143,8 @@ data class UiState(
     val importing: ImportState = ImportState(),
     val restore: RestoreState = RestoreState(),
     val backup: BackupState = BackupState(),
+    val vault: VaultState = VaultState(),
+    val profiles: List<CertificateProfile> = emptyList(),
 ) {
     val validityWarning: String?
         get() {
@@ -121,8 +161,43 @@ data class UiState(
 
 class KeystoreViewModel(application: Application) : AndroidViewModel(application) {
     private val generator = KeystoreGenerator()
+    private var vault = KeystoreVault(File(application.filesDir, "vault"), AndroidKeyWrapper(application))
+    private val profileStore = CertificateProfileStore(File(application.filesDir, "certificate-profiles.properties"))
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
+
+    /** Set right after a successful unlock so a still-locked key reports an error instead of re-prompting forever. */
+    private var justUnlocked = false
+    private var refreshJob: Job? = null
+
+    init {
+        refreshVault()
+        // Start the form with the profile used last time, so certificate details needn't be retyped.
+        viewModelScope.launch {
+            val (profiles, lastUsed) = withContext(Dispatchers.IO) {
+                runCatching { profileStore.list() to profileStore.lastUsed() }
+                    .getOrDefault(emptyList<CertificateProfile>() to null)
+            }
+            _state.update { state ->
+                val untouched = state.form.distinguishedName.isEmpty
+                state.copy(
+                    profiles = profiles,
+                    form = if (lastUsed != null && untouched) {
+                        state.form.withDistinguishedName(lastUsed.distinguishedName).copy(profileId = lastUsed.id)
+                    } else {
+                        state.form
+                    },
+                )
+            }
+        }
+    }
+
+    /** Lets tests substitute a vault that doesn't need the Android Keystore. */
+    internal fun useVault(replacement: KeystoreVault) {
+        refreshJob?.cancel()
+        vault = replacement
+        _state.update { it.copy(vault = it.vault.copy(entries = replacement.list())) }
+    }
 
     fun open(screen: Screen) {
         _state.update { it.copy(screen = screen) }
@@ -131,15 +206,69 @@ class KeystoreViewModel(application: Application) : AndroidViewModel(application
     /** Returns to the home screen and forgets every password and loaded file. */
     fun goHome() {
         _state.update {
-            UiState(form = it.form.copy(storePassword = "", keyPassword = ""))
+            UiState(form = it.form.copy(storePassword = "", keyPassword = ""), vault = it.vault.copy(error = null))
         }
     }
 
     // region Generate
 
     fun updateForm(transform: (FormState) -> FormState) {
-        _state.update { it.copy(form = transform(it.form), errors = emptyMap(), generationError = null) }
+        _state.update { state ->
+            var form = transform(state.form)
+            val profile = state.profiles.firstOrNull { it.id == form.profileId }
+            if (profile == null || profile.distinguishedName != form.distinguishedName) form = form.copy(profileId = null)
+            state.copy(form = form, errors = emptyMap(), generationError = null)
+        }
     }
+
+    // region Certificate profiles
+
+    fun applyProfile(id: String) {
+        val profile = _state.value.profiles.firstOrNull { it.id == id } ?: return
+        _state.update {
+            it.copy(form = it.form.withDistinguishedName(profile.distinguishedName).copy(profileId = id), errors = emptyMap())
+        }
+    }
+
+    /** Saves the form's certificate fields as a profile named [name] (replacing one with the same name). */
+    fun saveProfile(name: String) {
+        val dn = _state.value.form.distinguishedName
+        viewModelScope.launch {
+            val outcome = runCatching {
+                withContext(Dispatchers.IO) { profileStore.save(name, dn) to profileStore.list() }
+            }
+            outcome.onSuccess { (profile, profiles) ->
+                _state.update { state ->
+                    val form = if (state.form.distinguishedName == dn) {
+                        // Adopt the normalised (trimmed, upper-case country) values the profile stores.
+                        state.form.withDistinguishedName(profile.distinguishedName).copy(profileId = profile.id)
+                    } else {
+                        state.form
+                    }
+                    state.copy(profiles = profiles, form = form)
+                }
+            }
+        }
+    }
+
+    fun deleteProfile(id: String) {
+        viewModelScope.launch {
+            val profiles = withContext(Dispatchers.IO) {
+                runCatching {
+                    profileStore.delete(id)
+                    profileStore.list()
+                }.getOrNull()
+            } ?: return@launch
+            _state.update { state ->
+                state.copy(
+                    profiles = profiles,
+                    form = if (state.form.profileId == id) state.form.copy(profileId = null) else state.form,
+                )
+            }
+        }
+    }
+
+    // endregion
 
     fun generateStorePassword() {
         val password = String(PasswordGenerator.generate())
@@ -168,9 +297,22 @@ class KeystoreViewModel(application: Application) : AndroidViewModel(application
                 withContext(Dispatchers.Default) { generator.generate(request) }
             }
             request.wipe()
+            val profileId = form.profileId
+            if (outcome.isSuccess && profileId != null) {
+                withContext(Dispatchers.IO) { runCatching { profileStore.markUsed(profileId) } }
+            }
+            // Keep every generated keystore in the app so it can't be lost by navigating away.
+            val stored = outcome.getOrNull()?.let { keystore ->
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        vault.save(keystore, form.fileName, form.storePassword, form.effectiveKeyPassword)
+                    }
+                }
+            }
             _state.update { state ->
                 outcome.fold(
                     onSuccess = { keystore ->
+                        val storedId = stored?.getOrNull()?.id
                         state.copy(
                             generating = false,
                             screen = Screen.Details(
@@ -180,10 +322,15 @@ class KeystoreViewModel(application: Application) : AndroidViewModel(application
                                     storePassword = form.storePassword,
                                     keyPassword = form.effectiveKeyPassword,
                                     title = "Keystore ready",
-                                    notice = "The keystore only exists in memory until you save it. Save the " +
-                                        "file and create an encrypted backup: without the keystore and its " +
-                                        "passwords you can't publish updates, and must ask Google Play " +
-                                        "support to reset your upload key.",
+                                    notice = if (storedId != null) {
+                                        STORED_NOTICE
+                                    } else {
+                                        "Couldn't keep this keystore in the app" +
+                                            (stored?.exceptionOrNull()?.message?.let { ": $it" } ?: "") +
+                                            ". Save the file and create an encrypted backup now: without " +
+                                            "the keystore and its passwords you can't publish updates."
+                                    },
+                                    storedId = storedId,
                                 ),
                             ),
                         )
@@ -335,6 +482,115 @@ class KeystoreViewModel(application: Application) : AndroidViewModel(application
 
     // endregion
 
+    // region In-app vault
+
+    private fun refreshVault() {
+        refreshJob?.cancel()
+        refreshJob = viewModelScope.launch {
+            val entries = withContext(Dispatchers.IO) { runCatching { vault.list() }.getOrDefault(emptyList()) }
+            _state.update { it.copy(vault = it.vault.copy(entries = entries)) }
+        }
+    }
+
+    /** Keeps an imported or restored keystore in the app. */
+    fun keepInApp(details: KeystoreDetails) {
+        _state.update { it.copy(vault = it.vault.copy(saving = true, error = null)) }
+        viewModelScope.launch {
+            val outcome = runCatching {
+                withContext(Dispatchers.IO) {
+                    vault.save(details.keystore, details.fileName, details.storePassword, details.keyPassword).also {
+                        details.backup?.let { backup ->
+                            vault.saveBackupPassphrase(it.id, backup.passphrase, backup.fileName)
+                        }
+                    }
+                }
+            }
+            _state.update { state ->
+                val summary = outcome.getOrNull()
+                val screen = state.screen
+                state.copy(
+                    screen = if (summary != null && screen is Screen.Details && screen.details === details) {
+                        Screen.Details(details.copy(storedId = summary.id, notice = STORED_NOTICE))
+                    } else {
+                        screen
+                    },
+                    vault = state.vault.copy(saving = false, error = outcome.exceptionOrNull()?.message),
+                )
+            }
+            refreshVault()
+        }
+    }
+
+    fun openStored(id: String) {
+        _state.update { it.copy(vault = it.vault.copy(busyId = id, error = null)) }
+        viewModelScope.launch {
+            val outcome = runCatching { withContext(Dispatchers.IO) { vault.open(id) } }
+            val afterUnlock = justUnlocked
+            justUnlocked = false
+            _state.update { state ->
+                outcome.fold(
+                    onSuccess = { entry ->
+                        state.copy(
+                            vault = state.vault.copy(busyId = null),
+                            screen = Screen.Details(
+                                KeystoreDetails(
+                                    keystore = entry.keystore,
+                                    fileName = entry.summary.fileName,
+                                    storePassword = entry.storePassword,
+                                    keyPassword = entry.keyPassword,
+                                    title = entry.summary.fileName,
+                                    notice = STORED_NOTICE,
+                                    storedId = id,
+                                    backup = entry.backup,
+                                ),
+                            ),
+                        )
+                    },
+                    onFailure = { error ->
+                        if (needsUnlock(error) && afterUnlock) {
+                            // e.g. a weak biometric on Android 9/10, which doesn't unlock keystore keys.
+                            state.copy(
+                                vault = state.vault.copy(
+                                    busyId = null,
+                                    error = "That unlock wasn't accepted for stored keys. Try again using your " +
+                                        "PIN, pattern or password.",
+                                ),
+                            )
+                        } else if (needsUnlock(error)) {
+                            state.copy(vault = state.vault.copy(busyId = null, unlockFor = id))
+                        } else {
+                            state.copy(vault = state.vault.copy(busyId = null, error = error.message ?: error.toString()))
+                        }
+                    },
+                )
+            }
+        }
+    }
+
+    /** The user unlocked with a biometric or their screen lock: retry opening the entry. */
+    fun unlockSucceeded() {
+        val id = _state.value.vault.unlockFor ?: return
+        _state.update { it.copy(vault = it.vault.copy(unlockFor = null)) }
+        justUnlocked = true
+        openStored(id)
+    }
+
+    /** @param message `null` when the user simply cancelled. */
+    fun unlockFailed(message: String?) {
+        _state.update { it.copy(vault = it.vault.copy(unlockFor = null, error = message)) }
+    }
+
+    fun deleteStored(id: String) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { vault.delete(id) }
+            val screen = _state.value.screen
+            if (screen is Screen.Details && screen.details.storedId == id) goHome()
+            refreshVault()
+        }
+    }
+
+    // endregion
+
     // region Create backup
 
     fun createBackup(details: KeystoreDetails, passphrase: String, includePasswords: Boolean) {
@@ -357,7 +613,7 @@ class KeystoreViewModel(application: Application) : AndroidViewModel(application
                     onSuccess = { bytes ->
                         state.copy(
                             backup = BackupState(
-                                pending = PendingBackup(KeystoreBackup.fileNameFor(details.fileName), bytes),
+                                pending = PendingBackup(KeystoreBackup.fileNameFor(details.fileName), bytes, passphrase),
                             ),
                         )
                     },
@@ -368,8 +624,35 @@ class KeystoreViewModel(application: Application) : AndroidViewModel(application
     }
 
     /** Called once the save dialog for a [PendingBackup] has closed, whether or not it was saved. */
-    fun pendingBackupHandled() {
+    fun pendingBackupHandled(saved: Boolean) {
+        val pending = _state.value.backup.pending
         _state.update { it.copy(backup = BackupState()) }
+        if (saved && pending != null) rememberBackupPassphrase(pending)
+    }
+
+    /**
+     * Records the passphrase of a backup that was just saved, so a randomly generated one isn't lost.
+     * Kept keystores store it in the vault right away; others keep it until "Keep in this app".
+     */
+    private fun rememberBackupPassphrase(pending: PendingBackup) {
+        val details = (_state.value.screen as? Screen.Details)?.details ?: return
+        viewModelScope.launch {
+            val storedId = details.storedId
+            val stored = storedId?.let { id ->
+                runCatching {
+                    withContext(Dispatchers.IO) { vault.saveBackupPassphrase(id, pending.passphrase, pending.fileName) }
+                }.getOrNull()
+            }
+            val record = stored ?: BackupRecord(pending.passphrase, pending.fileName, Instant.now())
+            _state.update { state ->
+                val screen = state.screen
+                if (screen is Screen.Details && screen.details.keystore === details.keystore) {
+                    state.copy(screen = Screen.Details(screen.details.copy(backup = record)))
+                } else {
+                    state
+                }
+            }
+        }
     }
 
     // endregion
@@ -404,17 +687,13 @@ class KeystoreViewModel(application: Application) : AndroidViewModel(application
         validityYears = validityYears.toIntOrNull() ?: 0,
         keyAlgorithm = algorithm,
         format = format,
-        distinguishedName = DistinguishedName(
-            commonName = commonName,
-            organizationalUnit = organizationalUnit,
-            organization = organization,
-            locality = locality,
-            state = state,
-            countryCode = countryCode,
-        ),
+        distinguishedName = distinguishedName,
     )
 
     private companion object {
+        const val STORED_NOTICE = "Kept in this app, encrypted and unlocked with your fingerprint or screen " +
+            "lock. It's deleted if you uninstall the app or lose this phone, so also save the file and " +
+            "create an encrypted backup somewhere else."
         const val MAX_KEYSTORE_SIZE = 1024 * 1024
         const val MAX_BACKUP_SIZE = 8 * 1024 * 1024
     }

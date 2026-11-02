@@ -1,6 +1,14 @@
 package dev.keystore.app.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import dev.keystore.core.CertificateProfile
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -57,11 +65,34 @@ fun FormScreen(
     onGenerateStorePassword: () -> Unit,
     onGenerateKeyPassword: () -> Unit,
     onGenerate: () -> Unit,
+    onApplyProfile: (id: String) -> Unit,
+    onSaveProfile: (name: String) -> Unit,
+    onDeleteProfile: (id: String) -> Unit,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
     val form = state.form
     val errors = state.errors
+    var showSaveProfile by rememberSaveable { mutableStateOf(false) }
+    var showManageProfiles by rememberSaveable { mutableStateOf(false) }
+
+    if (showSaveProfile) {
+        SaveProfileDialog(
+            initialName = form.organization.ifBlank { form.commonName }.trim(),
+            onDismiss = { showSaveProfile = false },
+            onSave = { name ->
+                showSaveProfile = false
+                onSaveProfile(name)
+            },
+        )
+    }
+    if (showManageProfiles) {
+        ManageProfilesDialog(
+            profiles = state.profiles,
+            onDelete = onDeleteProfile,
+            onDismiss = { showManageProfiles = false },
+        )
+    }
 
     Column(
         modifier = modifier
@@ -169,6 +200,15 @@ fun FormScreen(
             Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
         }
 
+        ProfilePicker(
+            profiles = state.profiles,
+            selectedId = form.profileId,
+            canSave = !form.distinguishedName.isEmpty,
+            onApply = onApplyProfile,
+            onSaveNew = { showSaveProfile = true },
+            onManage = { showManageProfiles = true },
+        )
+
         DnField("First and last name (CN)", form.commonName) { v -> onFormChange { it.copy(commonName = v) } }
         DnField("Organizational unit (OU)", form.organizationalUnit) { v ->
             onFormChange { it.copy(organizationalUnit = v) }
@@ -269,5 +309,114 @@ internal fun PasswordField(
             }
         },
         modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ProfilePicker(
+    profiles: List<CertificateProfile>,
+    selectedId: String?,
+    canSave: Boolean,
+    onApply: (String) -> Unit,
+    onSaveNew: () -> Unit,
+    onManage: () -> Unit,
+) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Profile", style = MaterialTheme.typography.labelLarge)
+            if (profiles.isEmpty()) {
+                Text(
+                    "Fill in the fields below once and save them as a profile to reuse them next time.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                profiles.forEach { profile ->
+                    FilterChip(
+                        selected = profile.id == selectedId,
+                        onClick = { onApply(profile.id) },
+                        label = { Text(profile.name) },
+                    )
+                }
+                AssistChip(
+                    onClick = onSaveNew,
+                    enabled = canSave,
+                    label = { Text(if (selectedId == null) "Save as profile" else "Save as new profile") },
+                    leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null, Modifier.size(18.dp)) },
+                )
+            }
+            if (profiles.isNotEmpty()) {
+                TextButton(onClick = onManage, contentPadding = PaddingValues(horizontal = 0.dp)) {
+                    Text("Manage profiles")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SaveProfileDialog(initialName: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var name by rememberSaveable { mutableStateOf(initialName) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Save certificate profile") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "The certificate fields are saved under this name. Using an existing name updates that profile.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it.take(40) },
+                    label = { Text("Profile name") },
+                    placeholder = { Text("e.g. Personal, Example Apps") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Words,
+                        imeAction = ImeAction.Done,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(name) }, enabled = name.isNotBlank()) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun ManageProfilesDialog(
+    profiles: List<CertificateProfile>,
+    onDelete: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Certificate profiles") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                if (profiles.isEmpty()) Text("No profiles saved.")
+                profiles.forEach { profile ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(profile.name, style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                profile.distinguishedName.toX500String(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        IconButton(onClick = { onDelete(profile.id) }) {
+                            Icon(Icons.Filled.Delete, contentDescription = "Delete ${profile.name}")
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
     )
 }

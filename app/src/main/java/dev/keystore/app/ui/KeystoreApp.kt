@@ -17,9 +17,12 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import dev.keystore.app.vault.showUnlockPrompt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -28,6 +31,20 @@ fun KeystoreApp(viewModel: KeystoreViewModel = viewModel()) {
     val screen = state.screen
 
     BackHandler(enabled = screen != Screen.Home) { viewModel.goHome() }
+
+    val context = LocalContext.current
+    val unlockFor = state.vault.unlockFor
+    LaunchedEffect(unlockFor) {
+        if (unlockFor != null) {
+            val name = state.vault.entries.firstOrNull { it.id == unlockFor }?.fileName ?: "keystore"
+            showUnlockPrompt(
+                context = context,
+                title = "Open $name",
+                onSuccess = viewModel::unlockSucceeded,
+                onError = viewModel::unlockFailed,
+            )
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -54,13 +71,22 @@ fun KeystoreApp(viewModel: KeystoreViewModel = viewModel()) {
         },
     ) { padding ->
         when (screen) {
-            Screen.Home -> HomeScreen(onOpen = viewModel::open, contentPadding = padding)
+            Screen.Home -> HomeScreen(
+                vault = state.vault,
+                onOpen = viewModel::open,
+                onOpenStored = viewModel::openStored,
+                onDeleteStored = viewModel::deleteStored,
+                contentPadding = padding,
+            )
             Screen.Generate -> FormScreen(
                 state = state,
                 onFormChange = viewModel::updateForm,
                 onGenerateStorePassword = viewModel::generateStorePassword,
                 onGenerateKeyPassword = viewModel::generateKeyPassword,
                 onGenerate = viewModel::generate,
+                onApplyProfile = viewModel::applyProfile,
+                onSaveProfile = viewModel::saveProfile,
+                onDeleteProfile = viewModel::deleteProfile,
                 contentPadding = padding,
             )
             Screen.Import -> ImportScreen(
@@ -82,6 +108,8 @@ fun KeystoreApp(viewModel: KeystoreViewModel = viewModel()) {
                 backup = state.backup,
                 onCreateBackup = viewModel::createBackup,
                 onPendingBackupHandled = viewModel::pendingBackupHandled,
+                vault = state.vault,
+                onKeepInApp = viewModel::keepInApp,
                 contentPadding = padding,
             )
         }

@@ -9,9 +9,14 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import dev.keystore.app.ui.theme.KeystoreTheme
+import dev.keystore.core.BackupRecord
+import dev.keystore.core.CertificateProfileStore
 import dev.keystore.core.DistinguishedName
 import dev.keystore.core.KeystoreGenerator
+import dev.keystore.core.KeyWrapper
+import dev.keystore.core.KeystoreFormat
 import dev.keystore.core.KeystoreRequest
+import dev.keystore.core.KeystoreVault
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -22,8 +27,11 @@ import org.robolectric.annotation.GraphicsMode
 import org.robolectric.shadows.ShadowDialog
 import org.robolectric.shadows.ShadowLooper
 import java.io.File
+import java.security.KeyPairGenerator
+import java.time.Instant
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
+import javax.crypto.Cipher
 
 /**
  * Renders each screen to `docs/screenshots/` so the UI can be reviewed without a device.
@@ -60,10 +68,47 @@ class ScreenshotTest {
         storePassword = "Xk7-pQ2.mR9!vT4_wZ8@hN3e",
         keyPassword = "Xk7-pQ2.mR9!vT4_wZ8@hN3e",
         title = "Keystore ready",
-        notice = "The keystore only exists in memory until you save it. Save the file and create an " +
-            "encrypted backup: without the keystore and its passwords you can't publish updates, and must " +
-            "ask Google Play support to reset your upload key.",
+        notice = "Kept in this app, encrypted and unlocked with your fingerprint or screen lock. It's deleted " +
+            "if you uninstall the app or lose this phone, so also save the file and create an encrypted " +
+            "backup somewhere else.",
+        storedId = "00000000-0000-0000-0000-000000000000",
+        backup = BackupRecord("tB7#q2-Lw9.zR4!mK8@xV3c", "upload.ksbackup", Instant.parse("2026-10-30T09:05:00Z")),
     )
+
+    /** A vault with a few entries, using a software RSA key instead of the Android Keystore. */
+    private fun sampleVault(): KeystoreVault {
+        val keyPair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
+        val wrapper = object : KeyWrapper {
+            override fun wrap(key: ByteArray): ByteArray =
+                Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding").run {
+                    init(Cipher.ENCRYPT_MODE, keyPair.public)
+                    doFinal(key)
+                }
+
+            override fun unwrap(wrapped: ByteArray): ByteArray =
+                Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding").run {
+                    init(Cipher.DECRYPT_MODE, keyPair.private)
+                    doFinal(wrapped)
+                }
+        }
+        var now = Instant.parse("2026-10-01T09:00:00Z")
+        val dir = kotlin.io.path.createTempDirectory("vault").toFile()
+        val vault = KeystoreVault(dir, wrapper, clock = { now })
+        vault.save(keystore, "upload.jks", "Xk7-pQ2.mR9!vT4_wZ8@hN3e", "Xk7-pQ2.mR9!vT4_wZ8@hN3e")
+        now = now.plusSeconds(86_400)
+        val legacy = KeystoreGenerator().generate(
+            KeystoreRequest(
+                alias = "release",
+                storePassword = "legacy-pass".toCharArray(),
+                keyPassword = "legacy-pass".toCharArray(),
+                format = KeystoreFormat.PKCS12,
+                validityYears = 30,
+                distinguishedName = DistinguishedName(commonName = "Example Apps", countryCode = "TR"),
+            ),
+        )
+        vault.save(legacy, "release-key.p12", null, null)
+        return vault
+    }
 
     private fun show(dark: Boolean = false, setUp: KeystoreViewModel.() -> Unit): KeystoreViewModel {
         val viewModel = KeystoreViewModel(RuntimeEnvironment.getApplication())
@@ -111,31 +156,44 @@ class ScreenshotTest {
 
     @Test
     fun home() {
-        show { }
+        show { useVault(sampleVault()) }
         saveScreen("01-home")
     }
 
     @Test
     fun homeDark() {
-        show(dark = true) { }
+        show(dark = true) { useVault(sampleVault()) }
         saveScreen("01-home-dark")
     }
 
     @Test
     @Config(qualifiers = "w400dp-h1900dp-xhdpi")
     fun generateForm() {
-        show {
-            open(Screen.Generate)
-            updateForm {
-                it.copy(
-                    storePassword = "Xk7-pQ2.mR9!vT4_wZ8@hN3e",
-                    commonName = "Jane Doe",
-                    organization = "Example Apps",
-                    locality = "Istanbul",
-                    countryCode = "TR",
+        // Saved profiles; the last one saved is used to pre-fill the form.
+        CertificateProfileStore(File(RuntimeEnvironment.getApplication().filesDir, "certificate-profiles.properties"))
+            .apply {
+                save("Personal", DistinguishedName(commonName = "Jane Doe", countryCode = "TR"))
+                save(
+                    "Example Apps",
+                    DistinguishedName(
+                        commonName = "Jane Doe",
+                        organization = "Example Apps",
+                        locality = "Istanbul",
+                        countryCode = "TR",
+                    ),
                 )
             }
+        val viewModel = show {
+            open(Screen.Generate)
+            updateForm { it.copy(storePassword = "Xk7-pQ2.mR9!vT4_wZ8@hN3e") }
         }
+        // Profiles load on a background thread.
+        val deadline = System.currentTimeMillis() + 10_000
+        while (viewModel.state.value.form.profileId == null && System.currentTimeMillis() < deadline) {
+            Thread.sleep(50)
+            ShadowLooper.idleMainLooper()
+        }
+        settle()
         saveScreen("02-generate-form")
     }
 

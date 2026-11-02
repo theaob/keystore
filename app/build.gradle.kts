@@ -19,11 +19,11 @@ fun signingValue(environmentVariable: String, property: String): String? =
 val releaseStoreFile = signingValue("SIGNING_STORE_FILE", "storeFile")
 
 android {
-    namespace = "dev.keystore.app"
+    namespace = "com.onurbaykal.keystoremanager"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "dev.keystore.app"
+        applicationId = "com.onurbaykal.keystoremanager"
         minSdk = 26
         targetSdk = 36
         // CI passes -PversionCode=<run number> so every release build can be uploaded to Play.

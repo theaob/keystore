@@ -9,6 +9,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import dev.keystore.app.ui.theme.KeystoreTheme
+import dev.keystore.core.CertificateProfileStore
 import dev.keystore.core.DistinguishedName
 import dev.keystore.core.KeystoreGenerator
 import dev.keystore.core.KeyWrapper
@@ -166,18 +167,31 @@ class ScreenshotTest {
     @Test
     @Config(qualifiers = "w400dp-h1900dp-xhdpi")
     fun generateForm() {
-        show {
-            open(Screen.Generate)
-            updateForm {
-                it.copy(
-                    storePassword = "Xk7-pQ2.mR9!vT4_wZ8@hN3e",
-                    commonName = "Jane Doe",
-                    organization = "Example Apps",
-                    locality = "Istanbul",
-                    countryCode = "TR",
+        // Saved profiles; the last one saved is used to pre-fill the form.
+        CertificateProfileStore(File(RuntimeEnvironment.getApplication().filesDir, "certificate-profiles.properties"))
+            .apply {
+                save("Personal", DistinguishedName(commonName = "Jane Doe", countryCode = "TR"))
+                save(
+                    "Example Apps",
+                    DistinguishedName(
+                        commonName = "Jane Doe",
+                        organization = "Example Apps",
+                        locality = "Istanbul",
+                        countryCode = "TR",
+                    ),
                 )
             }
+        val viewModel = show {
+            open(Screen.Generate)
+            updateForm { it.copy(storePassword = "Xk7-pQ2.mR9!vT4_wZ8@hN3e") }
         }
+        // Profiles load on a background thread.
+        val deadline = System.currentTimeMillis() + 10_000
+        while (viewModel.state.value.form.profileId == null && System.currentTimeMillis() < deadline) {
+            Thread.sleep(50)
+            ShadowLooper.idleMainLooper()
+        }
+        settle()
         saveScreen("02-generate-form")
     }
 

@@ -8,6 +8,8 @@ import androidx.lifecycle.viewModelScope
 import dev.keystore.app.vault.AndroidKeyWrapper
 import dev.keystore.app.vault.needsUnlock
 import dev.keystore.core.BackupException
+import dev.keystore.core.CertificateProfile
+import dev.keystore.core.CertificateProfileStore
 import dev.keystore.core.DistinguishedName
 import dev.keystore.core.KeyAlgorithm
 import dev.keystore.core.KeystoreBackup
@@ -48,7 +50,21 @@ data class FormState(
     val locality: String = "",
     val state: String = "",
     val countryCode: String = "",
+    /** Profile the certificate fields came from; cleared as soon as they're edited. */
+    val profileId: String? = null,
 ) {
+    val distinguishedName: DistinguishedName
+        get() = DistinguishedName(commonName, organizationalUnit, organization, locality, state, countryCode)
+
+    fun withDistinguishedName(dn: DistinguishedName) = copy(
+        commonName = dn.commonName,
+        organizationalUnit = dn.organizationalUnit,
+        organization = dn.organization,
+        locality = dn.locality,
+        state = dn.state,
+        countryCode = dn.countryCode,
+    )
+
     val effectiveKeyPassword: String
         get() = if (keyPasswordSameAsStore || format == KeystoreFormat.PKCS12) storePassword else keyPassword
 
@@ -124,6 +140,7 @@ data class UiState(
     val restore: RestoreState = RestoreState(),
     val backup: BackupState = BackupState(),
     val vault: VaultState = VaultState(),
+    val profiles: List<CertificateProfile> = emptyList(),
 ) {
     val validityWarning: String?
         get() {
@@ -141,6 +158,7 @@ data class UiState(
 class KeystoreViewModel(application: Application) : AndroidViewModel(application) {
     private val generator = KeystoreGenerator()
     private var vault = KeystoreVault(File(application.filesDir, "vault"), AndroidKeyWrapper(application))
+    private val profileStore = CertificateProfileStore(File(application.filesDir, "certificate-profiles.properties"))
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
@@ -150,6 +168,24 @@ class KeystoreViewModel(application: Application) : AndroidViewModel(application
 
     init {
         refreshVault()
+        // Start the form with the profile used last time, so certificate details needn't be retyped.
+        viewModelScope.launch {
+            val (profiles, lastUsed) = withContext(Dispatchers.IO) {
+                runCatching { profileStore.list() to profileStore.lastUsed() }
+                    .getOrDefault(emptyList<CertificateProfile>() to null)
+            }
+            _state.update { state ->
+                val untouched = state.form.distinguishedName.isEmpty
+                state.copy(
+                    profiles = profiles,
+                    form = if (lastUsed != null && untouched) {
+                        state.form.withDistinguishedName(lastUsed.distinguishedName).copy(profileId = lastUsed.id)
+                    } else {
+                        state.form
+                    },
+                )
+            }
+        }
     }
 
     /** Lets tests substitute a vault that doesn't need the Android Keystore. */
@@ -173,8 +209,62 @@ class KeystoreViewModel(application: Application) : AndroidViewModel(application
     // region Generate
 
     fun updateForm(transform: (FormState) -> FormState) {
-        _state.update { it.copy(form = transform(it.form), errors = emptyMap(), generationError = null) }
+        _state.update { state ->
+            var form = transform(state.form)
+            val profile = state.profiles.firstOrNull { it.id == form.profileId }
+            if (profile == null || profile.distinguishedName != form.distinguishedName) form = form.copy(profileId = null)
+            state.copy(form = form, errors = emptyMap(), generationError = null)
+        }
     }
+
+    // region Certificate profiles
+
+    fun applyProfile(id: String) {
+        val profile = _state.value.profiles.firstOrNull { it.id == id } ?: return
+        _state.update {
+            it.copy(form = it.form.withDistinguishedName(profile.distinguishedName).copy(profileId = id), errors = emptyMap())
+        }
+    }
+
+    /** Saves the form's certificate fields as a profile named [name] (replacing one with the same name). */
+    fun saveProfile(name: String) {
+        val dn = _state.value.form.distinguishedName
+        viewModelScope.launch {
+            val outcome = runCatching {
+                withContext(Dispatchers.IO) { profileStore.save(name, dn) to profileStore.list() }
+            }
+            outcome.onSuccess { (profile, profiles) ->
+                _state.update { state ->
+                    val form = if (state.form.distinguishedName == dn) {
+                        // Adopt the normalised (trimmed, upper-case country) values the profile stores.
+                        state.form.withDistinguishedName(profile.distinguishedName).copy(profileId = profile.id)
+                    } else {
+                        state.form
+                    }
+                    state.copy(profiles = profiles, form = form)
+                }
+            }
+        }
+    }
+
+    fun deleteProfile(id: String) {
+        viewModelScope.launch {
+            val profiles = withContext(Dispatchers.IO) {
+                runCatching {
+                    profileStore.delete(id)
+                    profileStore.list()
+                }.getOrNull()
+            } ?: return@launch
+            _state.update { state ->
+                state.copy(
+                    profiles = profiles,
+                    form = if (state.form.profileId == id) state.form.copy(profileId = null) else state.form,
+                )
+            }
+        }
+    }
+
+    // endregion
 
     fun generateStorePassword() {
         val password = String(PasswordGenerator.generate())
@@ -203,6 +293,10 @@ class KeystoreViewModel(application: Application) : AndroidViewModel(application
                 withContext(Dispatchers.Default) { generator.generate(request) }
             }
             request.wipe()
+            val profileId = form.profileId
+            if (outcome.isSuccess && profileId != null) {
+                withContext(Dispatchers.IO) { runCatching { profileStore.markUsed(profileId) } }
+            }
             // Keep every generated keystore in the app so it can't be lost by navigating away.
             val stored = outcome.getOrNull()?.let { keystore ->
                 runCatching {
@@ -557,14 +651,7 @@ class KeystoreViewModel(application: Application) : AndroidViewModel(application
         validityYears = validityYears.toIntOrNull() ?: 0,
         keyAlgorithm = algorithm,
         format = format,
-        distinguishedName = DistinguishedName(
-            commonName = commonName,
-            organizationalUnit = organizationalUnit,
-            organization = organization,
-            locality = locality,
-            state = state,
-            countryCode = countryCode,
-        ),
+        distinguishedName = distinguishedName,
     )
 
     private companion object {

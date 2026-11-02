@@ -84,6 +84,9 @@ fun KeystoreApp(viewModel: KeystoreViewModel = viewModel()) {
                 onGenerateStorePassword = viewModel::generateStorePassword,
                 onGenerateKeyPassword = viewModel::generateKeyPassword,
                 onGenerate = viewModel::generate,
+                onApplyProfile = viewModel::applyProfile,
+                onSaveProfile = viewModel::saveProfile,
+                onDeleteProfile = viewModel::deleteProfile,
                 contentPadding = padding,
             )
             Screen.Import -> ImportScreen(

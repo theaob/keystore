@@ -17,6 +17,7 @@ keytool -genkeypair -v -storetype JKS -keystore upload.jks -alias upload \
 - **JKS or PKCS#12** keystore, RSA 2048/3072/4096 or EC P-256 key, self-signed X.509 v3 certificate
 - Certificate fields (CN, OU, O, L, ST, C), validity in years, with a warning if the certificate
   would expire before Google Play's 22 October 2033 minimum
+- **Certificate profiles**: save the certificate fields once and pick them from a list; the last-used profile is pre-filled
 - Random strong password generator; optional separate key password for JKS
 - Saves the keystore through the system file picker (Drive, Downloads, USB…)
 - Shows what `keytool -list -v` would: owner, serial, validity, **SHA-1 / SHA-256 / MD5 fingerprints**

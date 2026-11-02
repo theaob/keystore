@@ -21,6 +21,9 @@ jobs:
       - name: Test keystore core
         run: ./gradlew :keystore-core:test
 
+      - name: Test app logic
+        run: ./gradlew :app:testDebugUnitTest --tests 'dev.keystore.app.ui.KeystoreViewModelTest'
+
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug
 

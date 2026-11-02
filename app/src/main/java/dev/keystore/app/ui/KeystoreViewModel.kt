@@ -309,6 +309,8 @@ class KeystoreViewModel(application: Application) : AndroidViewModel(application
                     }
                 }
             }
+            // Update the home screen's list too, not just the details screen.
+            if (stored?.isSuccess == true) refreshVault()
             _state.update { state ->
                 outcome.fold(
                     onSuccess = { keystore ->

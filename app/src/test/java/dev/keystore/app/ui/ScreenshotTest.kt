@@ -13,7 +13,6 @@ import dev.keystore.core.BackupRecord
 import dev.keystore.core.CertificateProfileStore
 import dev.keystore.core.DistinguishedName
 import dev.keystore.core.KeystoreGenerator
-import dev.keystore.core.KeyWrapper
 import dev.keystore.core.KeystoreFormat
 import dev.keystore.core.KeystoreRequest
 import dev.keystore.core.KeystoreVault
@@ -27,11 +26,9 @@ import org.robolectric.annotation.GraphicsMode
 import org.robolectric.shadows.ShadowDialog
 import org.robolectric.shadows.ShadowLooper
 import java.io.File
-import java.security.KeyPairGenerator
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
-import javax.crypto.Cipher
 
 /**
  * Renders each screen to `docs/screenshots/` so the UI can be reviewed without a device.
@@ -77,20 +74,7 @@ class ScreenshotTest {
 
     /** A vault with a few entries, using a software RSA key instead of the Android Keystore. */
     private fun sampleVault(): KeystoreVault {
-        val keyPair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
-        val wrapper = object : KeyWrapper {
-            override fun wrap(key: ByteArray): ByteArray =
-                Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding").run {
-                    init(Cipher.ENCRYPT_MODE, keyPair.public)
-                    doFinal(key)
-                }
-
-            override fun unwrap(wrapped: ByteArray): ByteArray =
-                Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding").run {
-                    init(Cipher.DECRYPT_MODE, keyPair.private)
-                    doFinal(wrapped)
-                }
-        }
+        val wrapper = SoftwareKeyWrapper()
         var now = Instant.parse("2026-10-01T09:00:00Z")
         val dir = kotlin.io.path.createTempDirectory("vault").toFile()
         val vault = KeystoreVault(dir, wrapper, clock = { now })

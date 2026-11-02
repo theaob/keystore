@@ -107,7 +107,7 @@ fun DetailsScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
             Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Icon(Icons.Filled.Info, contentDescription = null)
                 Text(details.notice, style = MaterialTheme.typography.bodyMedium)
@@ -153,9 +153,9 @@ fun DetailsScreen(
                 "Register these in Firebase, Google Sign-In / Maps API key restrictions, or Play Console.",
                 style = MaterialTheme.typography.bodySmall,
             )
-            InfoRow("SHA-1", info.sha1, monospace = true)
-            InfoRow("SHA-256", info.sha256, monospace = true)
-            InfoRow("MD5", info.md5, monospace = true)
+            InfoRow("SHA-1", info.sha1, monospace = true, displayValue = groupFingerprint(info.sha1))
+            InfoRow("SHA-256", info.sha256, monospace = true, displayValue = groupFingerprint(info.sha256))
+            InfoRow("MD5", info.md5, monospace = true, displayValue = groupFingerprint(info.md5))
         }
 
         Section("keystore.properties") {
@@ -281,14 +281,21 @@ private fun Section(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun InfoRow(label: String, value: String, monospace: Boolean = false, sensitive: Boolean = false) {
+private fun InfoRow(
+    label: String,
+    value: String,
+    monospace: Boolean = false,
+    sensitive: Boolean = false,
+    /** Shown instead of [value]; the copy button still copies [value]. */
+    displayValue: String = value,
+) {
     val context = LocalContext.current
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.labelMedium)
             SelectionContainer {
                 Text(
-                    value,
+                    displayValue,
                     style = MaterialTheme.typography.bodyMedium,
                     fontFamily = if (monospace) FontFamily.Monospace else null,
                 )
@@ -321,6 +328,10 @@ private fun CodeBlock(label: String, code: String, sensitive: Boolean) {
         }
     }
 }
+
+/** Breaks a colon-separated fingerprint into lines of 8 bytes so it never wraps mid-byte. */
+private fun groupFingerprint(fingerprint: String): String =
+    fingerprint.split(":").chunked(8).joinToString("\n") { it.joinToString(":") }
 
 private fun writeFile(context: Context, uri: Uri, bytes: ByteArray, message: String) {
     val result = runCatching {

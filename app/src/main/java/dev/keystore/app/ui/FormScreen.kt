@@ -1,6 +1,5 @@
 package dev.keystore.app.ui
 
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -133,16 +132,17 @@ fun FormScreen(
         }
 
         Text("Key algorithm", style = MaterialTheme.typography.labelLarge)
-        Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            KeyAlgorithm.entries.forEach { algorithm ->
-                FilterChip(
-                    selected = form.algorithm == algorithm,
-                    onClick = { onFormChange { it.copy(algorithm = algorithm) } },
-                    label = { Text(algorithm.displayName) },
-                )
+        // Two per row so every option is visible without sideways scrolling.
+        KeyAlgorithm.entries.chunked(2).forEach { rowAlgorithms ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                rowAlgorithms.forEach { algorithm ->
+                    FilterChip(
+                        selected = form.algorithm == algorithm,
+                        onClick = { onFormChange { it.copy(algorithm = algorithm) } },
+                        label = { Text(algorithm.displayName) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
         }
 

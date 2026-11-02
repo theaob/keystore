@@ -1,0 +1,13 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.DS_Store
+captures/
+.kotlin/
+# Never commit real signing keys
+*.jks
+*.keystore
+*.p12
+keystore.properties

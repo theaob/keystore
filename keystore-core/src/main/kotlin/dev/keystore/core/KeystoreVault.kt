@@ -41,11 +41,15 @@ data class VaultEntrySummary(
     val hasPasswords: Boolean,
 )
 
+/** The passphrase of the most recent `.ksbackup` made of an entry. */
+data class BackupRecord(val passphrase: String, val fileName: String, val createdAt: Instant)
+
 class VaultEntry(
     val summary: VaultEntrySummary,
     val keystore: KeystoreFile,
     val storePassword: String?,
     val keyPassword: String?,
+    val backup: BackupRecord?,
 )
 
 class VaultException(message: String, cause: Throwable? = null) : Exception(message, cause)
@@ -53,7 +57,9 @@ class VaultException(message: String, cause: Throwable? = null) : Exception(mess
 /**
  * Keeps keystores and their passwords in a directory, each encrypted with its own AES-256-GCM key
  * that is wrapped by a [KeyWrapper]. Per entry there is a plain `<id>.meta` with the public details
- * used for listing, and an encrypted `<id>.enc` with the keystore and passwords.
+ * used for listing, an encrypted `<id>.enc` with the keystore and passwords, and optionally an
+ * encrypted `<id>.backup` with the passphrase of its latest backup. Every write only needs the
+ * wrapping (public) key, so nothing here prompts the user except [open].
  */
 class KeystoreVault(
     private val directory: File,
@@ -136,12 +142,37 @@ class KeystoreVault(
                 .generateCertificate(ByteArrayInputStream(der)) as X509Certificate
             KeystoreFile(bytes, summary.format, summary.alias, certificate)
         }
-        return VaultEntry(summary, keystore, storePassword, keyPassword)
+        return VaultEntry(summary, keystore, storePassword, keyPassword, readBackupRecord(id))
+    }
+
+    /** Remembers the passphrase of a backup just made of entry [id], replacing any earlier one. */
+    fun saveBackupPassphrase(id: String, passphrase: String, fileName: String): BackupRecord {
+        if (!metaFile(id).exists()) throw VaultException("Stored keystore not found")
+        val record = BackupRecord(passphrase, fileName, clock())
+        val properties = Properties().apply {
+            setProperty("passphrase", record.passphrase)
+            setProperty("fileName", record.fileName)
+            setProperty("createdAt", record.createdAt.toString())
+        }
+        writeAtomically(File(directory, id + BACKUP_SUFFIX), encrypt(toBytes(properties)))
+        return record
     }
 
     fun delete(id: String) {
         File(directory, id + SECRET_SUFFIX).delete()
+        File(directory, id + BACKUP_SUFFIX).delete()
         metaFile(id).delete()
+    }
+
+    private fun readBackupRecord(id: String): BackupRecord? {
+        val file = File(directory, id + BACKUP_SUFFIX)
+        if (!file.exists()) return null
+        val properties = Properties().apply { load(ByteArrayInputStream(decrypt(file.readBytes())).reader(Charsets.UTF_8)) }
+        return BackupRecord(
+            passphrase = properties.getProperty("passphrase") ?: return null,
+            fileName = properties.getProperty("fileName").orEmpty(),
+            createdAt = runCatching { Instant.parse(properties.getProperty("createdAt")) }.getOrDefault(Instant.EPOCH),
+        )
     }
 
     private fun metaFile(id: String): File {
@@ -235,6 +266,7 @@ class KeystoreVault(
         const val FORMAT_VERSION = 1
         const val META_SUFFIX = ".meta"
         const val SECRET_SUFFIX = ".enc"
+        const val BACKUP_SUFFIX = ".backup"
         const val AES_KEY_LENGTH = 32
         const val GCM_IV_LENGTH = 12
         const val GCM_TAG_BITS = 128

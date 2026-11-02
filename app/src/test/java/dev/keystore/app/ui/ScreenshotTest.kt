@@ -9,6 +9,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import dev.keystore.app.ui.theme.KeystoreTheme
+import dev.keystore.core.BackupRecord
 import dev.keystore.core.CertificateProfileStore
 import dev.keystore.core.DistinguishedName
 import dev.keystore.core.KeystoreGenerator
@@ -71,6 +72,7 @@ class ScreenshotTest {
             "if you uninstall the app or lose this phone, so also save the file and create an encrypted " +
             "backup somewhere else.",
         storedId = "00000000-0000-0000-0000-000000000000",
+        backup = BackupRecord("tB7#q2-Lw9.zR4!mK8@xV3c", "upload.ksbackup", Instant.parse("2026-10-30T09:05:00Z")),
     )
 
     /** A vault with a few entries, using a software RSA key instead of the Android Keystore. */

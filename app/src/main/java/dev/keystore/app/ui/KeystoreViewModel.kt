@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import dev.keystore.app.vault.AndroidKeyWrapper
 import dev.keystore.app.vault.needsUnlock
 import dev.keystore.core.BackupException
+import dev.keystore.core.BackupRecord
 import dev.keystore.core.CertificateProfile
 import dev.keystore.core.CertificateProfileStore
 import dev.keystore.core.DistinguishedName
@@ -34,6 +35,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.time.Instant
 import java.time.Year
 
 data class FormState(
@@ -83,6 +85,8 @@ data class KeystoreDetails(
     val notice: String,
     /** Id in the in-app vault, or `null` if this keystore isn't kept in the app. */
     val storedId: String? = null,
+    /** Passphrase of the latest `.ksbackup` made of this keystore, if known. */
+    val backup: BackupRecord? = null,
 )
 
 data class VaultState(
@@ -114,7 +118,7 @@ data class RestoreState(
 )
 
 /** An encrypted backup waiting for the user to pick where to save it. */
-class PendingBackup(val fileName: String, val bytes: ByteArray)
+class PendingBackup(val fileName: String, val bytes: ByteArray, val passphrase: String)
 
 data class BackupState(
     val creating: Boolean = false,
@@ -494,7 +498,11 @@ class KeystoreViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             val outcome = runCatching {
                 withContext(Dispatchers.IO) {
-                    vault.save(details.keystore, details.fileName, details.storePassword, details.keyPassword)
+                    vault.save(details.keystore, details.fileName, details.storePassword, details.keyPassword).also {
+                        details.backup?.let { backup ->
+                            vault.saveBackupPassphrase(it.id, backup.passphrase, backup.fileName)
+                        }
+                    }
                 }
             }
             _state.update { state ->
@@ -533,6 +541,7 @@ class KeystoreViewModel(application: Application) : AndroidViewModel(application
                                     title = entry.summary.fileName,
                                     notice = STORED_NOTICE,
                                     storedId = id,
+                                    backup = entry.backup,
                                 ),
                             ),
                         )
@@ -604,7 +613,7 @@ class KeystoreViewModel(application: Application) : AndroidViewModel(application
                     onSuccess = { bytes ->
                         state.copy(
                             backup = BackupState(
-                                pending = PendingBackup(KeystoreBackup.fileNameFor(details.fileName), bytes),
+                                pending = PendingBackup(KeystoreBackup.fileNameFor(details.fileName), bytes, passphrase),
                             ),
                         )
                     },
@@ -615,8 +624,35 @@ class KeystoreViewModel(application: Application) : AndroidViewModel(application
     }
 
     /** Called once the save dialog for a [PendingBackup] has closed, whether or not it was saved. */
-    fun pendingBackupHandled() {
+    fun pendingBackupHandled(saved: Boolean) {
+        val pending = _state.value.backup.pending
         _state.update { it.copy(backup = BackupState()) }
+        if (saved && pending != null) rememberBackupPassphrase(pending)
+    }
+
+    /**
+     * Records the passphrase of a backup that was just saved, so a randomly generated one isn't lost.
+     * Kept keystores store it in the vault right away; others keep it until "Keep in this app".
+     */
+    private fun rememberBackupPassphrase(pending: PendingBackup) {
+        val details = (_state.value.screen as? Screen.Details)?.details ?: return
+        viewModelScope.launch {
+            val storedId = details.storedId
+            val stored = storedId?.let { id ->
+                runCatching {
+                    withContext(Dispatchers.IO) { vault.saveBackupPassphrase(id, pending.passphrase, pending.fileName) }
+                }.getOrNull()
+            }
+            val record = stored ?: BackupRecord(pending.passphrase, pending.fileName, Instant.now())
+            _state.update { state ->
+                val screen = state.screen
+                if (screen is Screen.Details && screen.details.keystore === details.keystore) {
+                    state.copy(screen = Screen.Details(screen.details.copy(backup = record)))
+                } else {
+                    state
+                }
+            }
+        }
     }
 
     // endregion

@@ -98,6 +98,29 @@ class KeystoreVaultTest {
     }
 
     @Test
+    fun `backup passphrases are kept, survive re-saving and are deleted with the entry`() {
+        val keystore = generate("upload")
+        val summary = vault.save(keystore, "upload.jks", "store-secret", "key-secret")
+        assertNull(vault.open(summary.id).backup)
+
+        vault.saveBackupPassphrase(summary.id, "first passphrase", "upload.ksbackup")
+        now = now.plusSeconds(60)
+        vault.saveBackupPassphrase(summary.id, "second passphrase", "upload.ksbackup")
+        vault.save(keystore, "upload.jks", "store-secret", "key-secret")
+
+        val backup = vault.open(summary.id).backup!!
+        assertEquals("second passphrase", backup.passphrase)
+        assertEquals(now, backup.createdAt)
+        File(dir, "vault").listFiles()!!.forEach { file ->
+            assertTrue("second passphrase" !in file.readText(Charsets.ISO_8859_1), file.name)
+        }
+
+        vault.delete(summary.id)
+        assertEquals(emptyList(), File(dir, "vault").list()!!.toList())
+        assertFailsWith<VaultException> { vault.saveBackupPassphrase(summary.id, "x", "y") }
+    }
+
+    @Test
     fun `wrapper failures propagate so the app can ask the user to unlock`() {
         val summary = vault.save(generate("upload"), "upload.jks", "store-secret", "key-secret")
         wrapper.locked = true

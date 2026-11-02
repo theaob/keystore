@@ -1,0 +1,1 @@
+First release: create JKS and PKCS12 keystores, keep them encrypted in the app behind your fingerprint or screen lock, make OpenSSL-compatible encrypted backups, and reuse certificate profiles.

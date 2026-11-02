@@ -1,6 +1,6 @@
 Keystore Manager creates the signing key you need to publish an Android app, keeps it safe on your phone, and makes sure you never lose it.
 
-Losing your upload key means waiting on a key reset before you can ship an update. Losing an app signing key you manage yourself means you can never update that app again. Keystore Manager makes creating, storing and backing up these keys simple, entirely offline.
+Losing your upload key means waiting on a key reset before you can ship an update. Losing an app signing key you manage yourself means you can never update that app again. Keystore Manager makes creating, storing and backing up these keys simple, and it all works offline.
 
 CREATE A KEYSTORE IN SECONDS
 • JKS or PKCS#12, the formats Android Studio and Gradle expect
@@ -19,7 +19,7 @@ NEVER LOSE A KEY
 • Backups use standard OpenSSL encryption (AES-256, PBKDF2), so you can recover them on any computer, even without this app
 • Back up keystores you already have: the app checks the passwords actually unlock the key first
 • Restore a backup and verify it in one step
-• The app remembers the passphrase of every backup you make
+• The app remembers the passphrase of each saved keystore's latest backup
 
 EVERYTHING YOU NEED TO SIGN
 • SHA-1, SHA-256 and MD5 fingerprints for Firebase, Google Sign-In and API key restrictions

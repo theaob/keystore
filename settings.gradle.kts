@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "KeystoreGenerator"
+rootProject.name = "KeystoreManager"
 include(":app", ":keystore-core")

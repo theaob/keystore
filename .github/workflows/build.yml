@@ -22,12 +22,78 @@ jobs:
         run: ./gradlew :keystore-core:test
 
       - name: Test app logic
-        run: ./gradlew :app:testDebugUnitTest --tests 'dev.keystore.app.ui.KeystoreViewModelTest'
+        run: ./gradlew :app:testDebugUnitTest --tests 'com.onurbaykal.keystoremanager.ui.KeystoreViewModelTest'
 
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug
 
+      # Catches R8/lint problems in the release build on every PR, without needing the signing key.
+      - name: Build unsigned release
+        run: ./gradlew :app:assembleRelease
+
       - uses: actions/upload-artifact@v4
         with:
-          name: keystore-generator-debug
+          name: keystore-manager-debug
           path: app/build/outputs/apk/debug/*.apk
+
+  release:
+    # Signed builds only for main and manual runs; pull requests don't get the signing secrets.
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+    steps:
+      - name: Check signing secrets
+        id: signing
+        run: |
+          if [ -n "$SIGNING_KEYSTORE_BASE64" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Signing secrets are not set, so no signed release was built. See README > Release signing."
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.signing.outputs.available == 'true'
+
+      - uses: actions/setup-java@v4
+        if: steps.signing.outputs.available == 'true'
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.signing.outputs.available == 'true'
+
+      - name: Decode keystore
+        if: steps.signing.outputs.available == 'true'
+        run: echo "$SIGNING_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+
+      - name: Build signed APK and bundle
+        if: steps.signing.outputs.available == 'true'
+        env:
+          SIGNING_STORE_FILE: ${{ runner.temp }}/release.keystore
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: ./gradlew :app:assembleRelease :app:bundleRelease -PversionCode=${{ github.run_number }}
+
+      - name: Verify signature
+        if: steps.signing.outputs.available == 'true'
+        run: |
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner"
+          "$apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk
+          jarsigner -verify app/build/outputs/bundle/release/app-release.aab | tee jarsigner.log
+          grep -q "jar verified" jarsigner.log
+
+      - name: Remove keystore
+        if: always() && steps.signing.outputs.available == 'true'
+        run: rm -f "$RUNNER_TEMP/release.keystore"
+
+      - uses: actions/upload-artifact@v4
+        if: steps.signing.outputs.available == 'true'
+        with:
+          name: keystore-manager-release-${{ github.run_number }}
+          path: |
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/bundle/release/app-release.aab

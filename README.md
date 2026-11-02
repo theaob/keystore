@@ -1,4 +1,4 @@
-# Keystore Generator
+# Keystore Manager
 
 An Android app that creates the signing keystore you need to sign an Android App Bundle (AAB)
 for Google Play, without a computer or `keytool`. Everything happens on the device; the app has
@@ -73,6 +73,30 @@ Requires JDK 17+ and the Android SDK (platform 36).
 ```
 
 The GitHub Actions workflow runs both and uploads the debug APK as an artifact.
+
+## Release signing
+
+Release builds are signed when signing details are available, and are otherwise built unsigned.
+
+**In CI:** add four repository secrets (Settings → Secrets and variables → Actions):
+
+| Secret | Value |
+|---|---|
+| `SIGNING_KEYSTORE_BASE64` | The keystore file, Base64-encoded (`base64 -w0 upload.jks`, or **Copy Base64** in this app) |
+| `SIGNING_STORE_PASSWORD` | Store password |
+| `SIGNING_KEY_ALIAS` | Key alias |
+| `SIGNING_KEY_PASSWORD` | Key password |
+
+Each push to `main` (and each manual run of the Build workflow) then produces a signed
+`app-release.apk` and `app-release.aab`. The signature is verified, and both files are uploaded as
+the `keystore-manager-release-<run>` artifact. The version code is the workflow run number.
+
+**Locally:** put the keystore in the project root and create `keystore.properties` (both
+git-ignored) with `storeFile`, `storePassword`, `keyAlias` and `keyPassword`, as shown on the app's
+details screen. Then run `./gradlew :app:assembleRelease :app:bundleRelease`.
+
+Keep this keystore backed up like any other: losing it means you can't ship updates that install
+over the current version.
 
 ## Using the generated keystore
 

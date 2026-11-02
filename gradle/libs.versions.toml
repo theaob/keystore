@@ -5,6 +5,8 @@ bouncycastle = "1.82"
 composeBom = "2025.10.01"
 activityCompose = "1.11.0"
 lifecycle = "2.9.4"
+biometric = "1.1.0"
+fragment = "1.8.5"
 coreKtx = "1.17.0"
 junit = "4.13.2"
 robolectric = "4.16"
@@ -13,6 +15,8 @@ robolectric = "4.16"
 bouncycastle-pkix = { module = "org.bouncycastle:bcpkix-jdk18on", version.ref = "bouncycastle" }
 bouncycastle-prov = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bouncycastle" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
+androidx-biometric = { module = "androidx.biometric:biometric", version.ref = "biometric" }
+androidx-fragment = { module = "androidx.fragment:fragment", version.ref = "fragment" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
 androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
 androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }

@@ -2,13 +2,14 @@ package dev.keystore.app
 
 import android.os.Bundle
 import android.view.WindowManager
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.fragment.app.FragmentActivity
 import dev.keystore.app.ui.KeystoreApp
 import dev.keystore.app.ui.theme.KeystoreTheme
 
-class MainActivity : ComponentActivity() {
+// FragmentActivity because BiometricPrompt needs one.
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Passwords are shown on screen; keep them out of screenshots and the recents preview.

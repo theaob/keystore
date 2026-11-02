@@ -5,6 +5,8 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import dev.keystore.app.vault.AndroidKeyWrapper
+import dev.keystore.app.vault.needsUnlock
 import dev.keystore.core.BackupException
 import dev.keystore.core.DistinguishedName
 import dev.keystore.core.KeyAlgorithm
@@ -16,9 +18,12 @@ import dev.keystore.core.KeystoreLoadException
 import dev.keystore.core.KeystoreReader
 import dev.keystore.core.KeystoreRequest
 import dev.keystore.core.KeystoreValidator
+import dev.keystore.core.KeystoreVault
 import dev.keystore.core.PasswordGenerator
 import dev.keystore.core.ValidationError
+import dev.keystore.core.VaultEntrySummary
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,6 +31,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.time.Year
 
 data class FormState(
@@ -59,6 +65,18 @@ data class KeystoreDetails(
     val keyPassword: String?,
     val title: String,
     val notice: String,
+    /** Id in the in-app vault, or `null` if this keystore isn't kept in the app. */
+    val storedId: String? = null,
+)
+
+data class VaultState(
+    val entries: List<VaultEntrySummary> = emptyList(),
+    /** Entry being opened or saved, for progress indicators. */
+    val busyId: String? = null,
+    val saving: Boolean = false,
+    /** Entry waiting for the user to unlock with a biometric or their screen lock. */
+    val unlockFor: String? = null,
+    val error: String? = null,
 )
 
 data class ImportState(
@@ -105,6 +123,7 @@ data class UiState(
     val importing: ImportState = ImportState(),
     val restore: RestoreState = RestoreState(),
     val backup: BackupState = BackupState(),
+    val vault: VaultState = VaultState(),
 ) {
     val validityWarning: String?
         get() {
@@ -121,8 +140,24 @@ data class UiState(
 
 class KeystoreViewModel(application: Application) : AndroidViewModel(application) {
     private val generator = KeystoreGenerator()
+    private var vault = KeystoreVault(File(application.filesDir, "vault"), AndroidKeyWrapper(application))
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
+
+    /** Set right after a successful unlock so a still-locked key reports an error instead of re-prompting forever. */
+    private var justUnlocked = false
+    private var refreshJob: Job? = null
+
+    init {
+        refreshVault()
+    }
+
+    /** Lets tests substitute a vault that doesn't need the Android Keystore. */
+    internal fun useVault(replacement: KeystoreVault) {
+        refreshJob?.cancel()
+        vault = replacement
+        _state.update { it.copy(vault = it.vault.copy(entries = replacement.list())) }
+    }
 
     fun open(screen: Screen) {
         _state.update { it.copy(screen = screen) }
@@ -131,7 +166,7 @@ class KeystoreViewModel(application: Application) : AndroidViewModel(application
     /** Returns to the home screen and forgets every password and loaded file. */
     fun goHome() {
         _state.update {
-            UiState(form = it.form.copy(storePassword = "", keyPassword = ""))
+            UiState(form = it.form.copy(storePassword = "", keyPassword = ""), vault = it.vault.copy(error = null))
         }
     }
 
@@ -168,9 +203,18 @@ class KeystoreViewModel(application: Application) : AndroidViewModel(application
                 withContext(Dispatchers.Default) { generator.generate(request) }
             }
             request.wipe()
+            // Keep every generated keystore in the app so it can't be lost by navigating away.
+            val stored = outcome.getOrNull()?.let { keystore ->
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        vault.save(keystore, form.fileName, form.storePassword, form.effectiveKeyPassword)
+                    }
+                }
+            }
             _state.update { state ->
                 outcome.fold(
                     onSuccess = { keystore ->
+                        val storedId = stored?.getOrNull()?.id
                         state.copy(
                             generating = false,
                             screen = Screen.Details(
@@ -180,10 +224,15 @@ class KeystoreViewModel(application: Application) : AndroidViewModel(application
                                     storePassword = form.storePassword,
                                     keyPassword = form.effectiveKeyPassword,
                                     title = "Keystore ready",
-                                    notice = "The keystore only exists in memory until you save it. Save the " +
-                                        "file and create an encrypted backup: without the keystore and its " +
-                                        "passwords you can't publish updates, and must ask Google Play " +
-                                        "support to reset your upload key.",
+                                    notice = if (storedId != null) {
+                                        STORED_NOTICE
+                                    } else {
+                                        "Couldn't keep this keystore in the app" +
+                                            (stored?.exceptionOrNull()?.message?.let { ": $it" } ?: "") +
+                                            ". Save the file and create an encrypted backup now: without " +
+                                            "the keystore and its passwords you can't publish updates."
+                                    },
+                                    storedId = storedId,
                                 ),
                             ),
                         )
@@ -335,6 +384,110 @@ class KeystoreViewModel(application: Application) : AndroidViewModel(application
 
     // endregion
 
+    // region In-app vault
+
+    private fun refreshVault() {
+        refreshJob?.cancel()
+        refreshJob = viewModelScope.launch {
+            val entries = withContext(Dispatchers.IO) { runCatching { vault.list() }.getOrDefault(emptyList()) }
+            _state.update { it.copy(vault = it.vault.copy(entries = entries)) }
+        }
+    }
+
+    /** Keeps an imported or restored keystore in the app. */
+    fun keepInApp(details: KeystoreDetails) {
+        _state.update { it.copy(vault = it.vault.copy(saving = true, error = null)) }
+        viewModelScope.launch {
+            val outcome = runCatching {
+                withContext(Dispatchers.IO) {
+                    vault.save(details.keystore, details.fileName, details.storePassword, details.keyPassword)
+                }
+            }
+            _state.update { state ->
+                val summary = outcome.getOrNull()
+                val screen = state.screen
+                state.copy(
+                    screen = if (summary != null && screen is Screen.Details && screen.details === details) {
+                        Screen.Details(details.copy(storedId = summary.id, notice = STORED_NOTICE))
+                    } else {
+                        screen
+                    },
+                    vault = state.vault.copy(saving = false, error = outcome.exceptionOrNull()?.message),
+                )
+            }
+            refreshVault()
+        }
+    }
+
+    fun openStored(id: String) {
+        _state.update { it.copy(vault = it.vault.copy(busyId = id, error = null)) }
+        viewModelScope.launch {
+            val outcome = runCatching { withContext(Dispatchers.IO) { vault.open(id) } }
+            val afterUnlock = justUnlocked
+            justUnlocked = false
+            _state.update { state ->
+                outcome.fold(
+                    onSuccess = { entry ->
+                        state.copy(
+                            vault = state.vault.copy(busyId = null),
+                            screen = Screen.Details(
+                                KeystoreDetails(
+                                    keystore = entry.keystore,
+                                    fileName = entry.summary.fileName,
+                                    storePassword = entry.storePassword,
+                                    keyPassword = entry.keyPassword,
+                                    title = entry.summary.fileName,
+                                    notice = STORED_NOTICE,
+                                    storedId = id,
+                                ),
+                            ),
+                        )
+                    },
+                    onFailure = { error ->
+                        if (needsUnlock(error) && afterUnlock) {
+                            // e.g. a weak biometric on Android 9/10, which doesn't unlock keystore keys.
+                            state.copy(
+                                vault = state.vault.copy(
+                                    busyId = null,
+                                    error = "That unlock wasn't accepted for stored keys. Try again using your " +
+                                        "PIN, pattern or password.",
+                                ),
+                            )
+                        } else if (needsUnlock(error)) {
+                            state.copy(vault = state.vault.copy(busyId = null, unlockFor = id))
+                        } else {
+                            state.copy(vault = state.vault.copy(busyId = null, error = error.message ?: error.toString()))
+                        }
+                    },
+                )
+            }
+        }
+    }
+
+    /** The user unlocked with a biometric or their screen lock: retry opening the entry. */
+    fun unlockSucceeded() {
+        val id = _state.value.vault.unlockFor ?: return
+        _state.update { it.copy(vault = it.vault.copy(unlockFor = null)) }
+        justUnlocked = true
+        openStored(id)
+    }
+
+    /** @param message `null` when the user simply cancelled. */
+    fun unlockFailed(message: String?) {
+        _state.update { it.copy(vault = it.vault.copy(unlockFor = null, error = message)) }
+    }
+
+    fun deleteStored(id: String) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { vault.delete(id) }
+            val screen = _state.value.screen
+            if (screen is Screen.Details && screen.details.storedId == id) goHome()
+            refreshVault()
+        }
+    }
+
+    // endregion
+
     // region Create backup
 
     fun createBackup(details: KeystoreDetails, passphrase: String, includePasswords: Boolean) {
@@ -415,6 +568,9 @@ class KeystoreViewModel(application: Application) : AndroidViewModel(application
     )
 
     private companion object {
+        const val STORED_NOTICE = "Kept in this app, encrypted and unlocked with your fingerprint or screen " +
+            "lock. It's deleted if you uninstall the app or lose this phone, so also save the file and " +
+            "create an encrypted backup somewhere else."
         const val MAX_KEYSTORE_SIZE = 1024 * 1024
         const val MAX_BACKUP_SIZE = 8 * 1024 * 1024
     }

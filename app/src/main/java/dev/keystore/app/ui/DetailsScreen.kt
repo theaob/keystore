@@ -22,12 +22,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -60,6 +62,8 @@ fun DetailsScreen(
     backup: BackupState,
     onCreateBackup: (details: KeystoreDetails, passphrase: String, includePasswords: Boolean) -> Unit,
     onPendingBackupHandled: () -> Unit,
+    vault: VaultState,
+    onKeepInApp: (KeystoreDetails) -> Unit,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
@@ -126,6 +130,22 @@ fun DetailsScreen(
             onClick = { showBackupDialog = true },
         )
         ErrorText(backup.error?.let { "Backup failed: $it" })
+        if (details.storedId == null) {
+            OutlinedButton(
+                onClick = { onKeepInApp(details) },
+                enabled = !vault.saving,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (vault.saving) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(Icons.Filled.Key, contentDescription = null)
+                }
+                Spacer(Modifier.size(8.dp))
+                Text("Keep in this app")
+            }
+            ErrorText(vault.error?.let { "Couldn't keep it in the app: $it" })
+        }
         OutlinedButton(
             onClick = { savePem.launch(KeystoreBackup.certificateFileName(details.fileName)) },
             modifier = Modifier.fillMaxWidth(),

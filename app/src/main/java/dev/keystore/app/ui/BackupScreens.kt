@@ -16,15 +16,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -32,55 +27,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import dev.keystore.core.KeystoreBackup
-
-@Composable
-fun HomeScreen(onOpen: (Screen) -> Unit, contentPadding: PaddingValues) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(contentPadding)
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        HomeCard(
-            icon = Icons.Filled.Add,
-            title = "Create a new keystore",
-            description = "Generate a JKS or PKCS12 upload key for signing your app bundle.",
-            onClick = { onOpen(Screen.Generate) },
-        )
-        HomeCard(
-            icon = Icons.Filled.Backup,
-            title = "Back up an existing keystore",
-            description = "Check a .jks or .p12 file's passwords, then save an encrypted backup with them.",
-            onClick = { onOpen(Screen.Import) },
-        )
-        HomeCard(
-            icon = Icons.Filled.Restore,
-            title = "Restore from a backup",
-            description = "Open a .${KeystoreBackup.EXTENSION} file to get the keystore and its passwords back.",
-            onClick = { onOpen(Screen.Restore) },
-        )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun HomeCard(icon: ImageVector, title: String, description: String, onClick: () -> Unit) {
-    Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(description, style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-    }
-}
 
 @Composable
 fun ImportScreen(

@@ -110,7 +110,7 @@ tasks.withType<Test>().configureEach {
         rootProject.file("fastlane/metadata/android/en-US/images/phoneScreenshots").path,
     )
     testLogging {
-        events("failed")
+        events("started", "passed", "failed")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
         showCauses = true
         showStackTraces = true

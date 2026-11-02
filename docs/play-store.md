@@ -67,13 +67,13 @@ final list under **App bundle explorer → Permissions** after uploading.
 
 ## Privacy policy URL
 
-Play needs a public URL. Choose one:
+**https://theaob.github.io/keystore/privacy/**
 
-- **Public repository:** `https://github.com/theaob/keystore/blob/main/PRIVACY.md`
-- **Private repository:** publish `PRIVACY.md` with GitHub Pages, a gist or your own site.
+The `Pages` workflow renders `PRIVACY.md` into that page whenever it changes on `main`. Enable it
+once under Settings → Pages → Build and deployment → Source: **GitHub Actions**. Edit
+`PRIVACY.md` to change the policy; don't edit the generated HTML.
 
-Replace `CONTACT_EMAIL` in `PRIVACY.md` with the address you want shown publicly. Play also
-requires a public developer contact email in the store listing.
+Play also requires a public developer contact email in the store listing (Store settings).
 
 ## Testing requirement for new personal accounts
 

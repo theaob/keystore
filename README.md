@@ -77,7 +77,8 @@ The GitHub Actions workflow runs both and uploads the debug APK as an artifact.
 ## Publishing on Google Play
 
 Store listing text, graphics and screenshots are in `fastlane/metadata/android/en-US/`, and the
-privacy policy is `PRIVACY.md`. Play Console answers (data safety, content rating and more) are in
+privacy policy is `PRIVACY.md`, published by the Pages workflow at
+https://theaob.github.io/keystore/privacy/. Play Console answers (data safety, content rating and more) are in
 [docs/play-store.md](docs/play-store.md).
 
 ## Release signing

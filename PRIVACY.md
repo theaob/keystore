@@ -41,4 +41,5 @@ Changes to this policy will be published at this address with a new "Last update
 
 ## Contact
 
-Questions about this policy: CONTACT_EMAIL
+Questions about this policy: open an issue at
+[github.com/theaob/keystore/issues](https://github.com/theaob/keystore/issues).

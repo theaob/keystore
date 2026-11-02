@@ -1,13 +1,12 @@
 name: Screenshots
 
-# Renders every screen with Robolectric and commits the PNGs to docs/screenshots
-# so the UI can be reviewed (and shown in the README) without a device.
+# Renders every screen with Robolectric: review screenshots go to docs/screenshots, Google Play
+# listing screenshots to fastlane/metadata/android/en-US/images/phoneScreenshots.
+#
+# Manual only (Actions > Screenshots > Run workflow, on a feature branch). Running on every push
+# made the bot commit regenerated PNGs to both main and PR branches, which then conflicted.
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "app/src/**"
-      - ".github/workflows/screenshots.yml"
 
 permissions:
   contents: write
@@ -38,15 +37,17 @@ jobs:
           name: screenshots
           path: |
             docs/screenshots/*.png
+            fastlane/metadata/android/en-US/images/phoneScreenshots/*.png
             app/build/reports/tests/
           if-no-files-found: ignore
 
       - name: Commit screenshots
-        if: always()
+        # Never commit to main: screenshots land there through the PR that updates them.
+        if: always() && github.ref != 'refs/heads/main'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/screenshots
+          git add docs/screenshots fastlane/metadata/android/en-US/images/phoneScreenshots
           if git diff --cached --quiet; then
             echo "Screenshots unchanged"
           else

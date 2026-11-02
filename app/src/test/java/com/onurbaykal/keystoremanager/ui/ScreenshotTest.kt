@@ -8,6 +8,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.onurbaykal.keystoremanager.ui.theme.KeystoreTheme
 import com.onurbaykal.keystoremanager.core.BackupRecord
 import com.onurbaykal.keystoremanager.core.CertificateProfileStore
@@ -42,6 +43,10 @@ class ScreenshotTest {
     val compose = createAndroidComposeRule<ComponentActivity>()
 
     private val outputDir = File(System.getProperty("screenshotDir") ?: "build/screenshots").apply { mkdirs() }
+
+    /** Google Play store listing screenshots (fastlane layout). */
+    private val playDir =
+        File(System.getProperty("playScreenshotDir") ?: "build/play-screenshots").apply { mkdirs() }
 
     private val keystore by lazy {
         KeystoreGenerator(clock = { ZonedDateTime.of(2026, 10, 30, 9, 0, 0, 0, ZoneOffset.UTC) }).generate(
@@ -121,7 +126,7 @@ class ScreenshotTest {
     private fun render(view: View): Bitmap =
         Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888).also { view.draw(Canvas(it)) }
 
-    private fun saveScreen(name: String, withDialog: Boolean = false) {
+    private fun saveScreen(name: String, withDialog: Boolean = false, directory: File = outputDir) {
         val bitmap = render(compose.activity.window.decorView)
         if (withDialog) {
             val dialogView = checkNotNull(ShadowDialog.getLatestDialog()?.window?.decorView) { "No dialog shown" }
@@ -135,7 +140,7 @@ class ScreenshotTest {
                 null,
             )
         }
-        File(outputDir, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        File(directory, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
     @Test
@@ -224,5 +229,82 @@ class ScreenshotTest {
             }
         }
         saveScreen("06-restore")
+    }
+
+    // Google Play phone screenshots: 1080x1920 (9:16), within Play's 2:1 aspect-ratio limit.
+
+    private fun showFormWithProfile(): KeystoreViewModel {
+        CertificateProfileStore(File(RuntimeEnvironment.getApplication().filesDir, "certificate-profiles.properties"))
+            .save(
+                "Example Apps",
+                DistinguishedName(
+                    commonName = "Jane Doe",
+                    organization = "Example Apps",
+                    locality = "Istanbul",
+                    countryCode = "TR",
+                ),
+            )
+        val viewModel = show {
+            open(Screen.Generate)
+            updateForm { it.copy(storePassword = "Xk7-pQ2.mR9!vT4_wZ8@hN3e") }
+        }
+        val deadline = System.currentTimeMillis() + 10_000
+        while (viewModel.state.value.form.profileId == null && System.currentTimeMillis() < deadline) {
+            Thread.sleep(50)
+            ShadowLooper.idleMainLooper()
+        }
+        settle()
+        return viewModel
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h640dp-xxhdpi")
+    fun playHome() {
+        show { useVault(sampleVault()) }
+        saveScreen("1_home", directory = playDir)
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h640dp-xxhdpi")
+    fun playCertificateProfile() {
+        showFormWithProfile()
+        compose.onNodeWithText("Certificate").performScrollTo()
+        settle()
+        saveScreen("2_certificate_profile", directory = playDir)
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h640dp-xxhdpi")
+    fun playDetails() {
+        show { open(Screen.Details(details())) }
+        saveScreen("3_keystore_details", directory = playDir)
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h640dp-xxhdpi")
+    fun playFingerprints() {
+        show { open(Screen.Details(details())) }
+        compose.onNodeWithText("Fingerprints").performScrollTo()
+        settle()
+        saveScreen("4_fingerprints", directory = playDir)
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h640dp-xxhdpi")
+    fun playRestore() {
+        show {
+            open(Screen.Restore)
+            updateRestore {
+                it.copy(fileName = "upload.ksbackup", bytes = byteArrayOf(1), passphrase = "my backup passphrase")
+            }
+        }
+        saveScreen("5_restore_backup", directory = playDir)
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h640dp-xxhdpi")
+    fun playHomeDark() {
+        show(dark = true) { useVault(sampleVault()) }
+        saveScreen("6_home_dark", directory = playDir)
     }
 }

@@ -87,6 +87,10 @@ kotlin {
 tasks.withType<Test>().configureEach {
     // Where ScreenshotTest writes its PNGs.
     systemProperty("screenshotDir", rootProject.file("docs/screenshots").path)
+    systemProperty(
+        "playScreenshotDir",
+        rootProject.file("fastlane/metadata/android/en-US/images/phoneScreenshots").path,
+    )
     testLogging {
         events("failed")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title>
+<meta name="description" content="{description}">
+<link rel="icon" type="image/png" href="{root}icon.png">
+<style>
+:root {{
+  --bg: #f7fbf2; --surface: #ffffff; --text: #181d17; --muted: #424940;
+  --accent: #2e7d32; --border: #dee5d8;
+}}
+@media (prefers-color-scheme: dark) {{
+  :root {{
+    --bg: #10140f; --surface: #1c211b; --text: #e0e4db; --muted: #c2c9bd;
+    --accent: #81c784; --border: #424940;
+  }}
+}}
+* {{ box-sizing: border-box; }}
+body {{
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 17px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+}}
+header {{ background: linear-gradient(120deg, #2e7d32, #1b5e20 55%, #0f4415); color: #fff; }}
+header .wrap {{ display: flex; align-items: center; gap: 16px; padding-top: 28px; padding-bottom: 28px; }}
+header img {{ width: 56px; height: 56px; border-radius: 14px; }}
+header a {{ color: #fff; text-decoration: none; font-weight: 700; font-size: 22px; }}
+.wrap {{ max-width: 760px; margin: 0 auto; padding-left: 20px; padding-right: 20px; }}
+main {{ background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+       margin: -12px auto 40px; padding: 8px 32px 24px; max-width: 760px; }}
+@media (max-width: 800px) {{ main {{ margin: 0; border-radius: 0; border-left: 0; border-right: 0; padding: 4px 20px 16px; }} }}
+h1 {{ font-size: 30px; line-height: 1.25; margin: 28px 0 8px; }}
+h2 {{ font-size: 21px; margin: 32px 0 8px; color: var(--accent); }}
+a {{ color: var(--accent); }}
+em {{ color: var(--muted); }}
+ul {{ padding-left: 22px; }}
+li {{ margin: 6px 0; }}
+code {{ font-size: 0.92em; }}
+footer {{ color: var(--muted); font-size: 14px; text-align: center; padding: 0 20px 32px; }}
+</style>
+</head>
+<body>
+<header><div class="wrap"><img src="{root}icon.png" alt=""><a href="{root}">Keystore Manager</a></div></header>
+<main>
+{content}
+</main>
+<footer><a href="{root}privacy/">Privacy policy</a> · <a href="https://github.com/theaob/keystore">Source code</a></footer>
+</body>
+</html>

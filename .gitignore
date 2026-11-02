@@ -12,3 +12,4 @@ captures/
 *.p12
 keystore.properties
 *.ksbackup
+_site/

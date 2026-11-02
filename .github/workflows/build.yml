@@ -33,7 +33,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: keystore-generator-debug
+          name: keystore-manager-debug
           path: app/build/outputs/apk/debug/*.apk
 
   release:
@@ -93,7 +93,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: steps.signing.outputs.available == 'true'
         with:
-          name: keystore-generator-release-${{ github.run_number }}
+          name: keystore-manager-release-${{ github.run_number }}
           path: |
             app/build/outputs/apk/release/app-release.apk
             app/build/outputs/bundle/release/app-release.aab

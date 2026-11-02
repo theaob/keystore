@@ -20,8 +20,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import dev.keystore.app.R
 import dev.keystore.app.vault.showUnlockPrompt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -52,7 +54,7 @@ fun KeystoreApp(viewModel: KeystoreViewModel = viewModel()) {
                 title = {
                     Text(
                         when (screen) {
-                            Screen.Home -> "Keystore Generator"
+                            Screen.Home -> stringResource(R.string.app_name)
                             Screen.Generate -> "New keystore"
                             Screen.Import -> "Back up a keystore"
                             Screen.Restore -> "Restore a backup"

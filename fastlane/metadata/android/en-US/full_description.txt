@@ -28,4 +28,4 @@ EVERYTHING YOU NEED TO SIGN
 • The keystore as Base64 for CI secrets such as GitHub Actions
 
 PRIVATE BY DESIGN
-Keystore Manager has no internet permission. Your keys and passwords never leave your device unless you save a file somewhere yourself. No accounts, no ads, no tracking.
+Your keys and passwords never leave your device unless you save a file somewhere yourself. No accounts. Key management works fully offline. The app is free and shows a small banner ad on its home screen only, never next to your keys or passwords.

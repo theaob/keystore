@@ -5,6 +5,7 @@ import android.view.WindowManager
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.fragment.app.FragmentActivity
+import com.onurbaykal.keystoremanager.ads.Ads
 import com.onurbaykal.keystoremanager.ui.KeystoreApp
 import com.onurbaykal.keystoremanager.ui.theme.KeystoreTheme
 
@@ -20,5 +21,6 @@ class MainActivity : FragmentActivity() {
                 KeystoreApp()
             }
         }
+        Ads.start(this)
     }
 }

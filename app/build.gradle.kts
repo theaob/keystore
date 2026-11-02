@@ -18,6 +18,18 @@ fun signingValue(environmentVariable: String, property: String): String? =
 
 val releaseStoreFile = signingValue("SIGNING_STORE_FILE", "storeFile")
 
+// Google's public AdMob test IDs: they show test ads and never earn or risk the account.
+val testAdmobAppId = "ca-app-pub-3940256099942544~3347511713"
+val testAdmobBannerId = "ca-app-pub-3940256099942544/9214589741"
+
+fun admobId(property: String): String? = (findProperty(property) as String?)?.trim()?.takeIf { it.isNotEmpty() }
+
+val releaseAdmobAppId = admobId("admob.appId")
+val releaseAdmobBannerId = admobId("admob.bannerId")
+if (releaseAdmobAppId == null || releaseAdmobBannerId == null) {
+    logger.warn("admob.appId/admob.bannerId not set in gradle.properties: release builds will show test ads")
+}
+
 android {
     namespace = "com.onurbaykal.keystoremanager"
     compileSdk = 36
@@ -29,6 +41,9 @@ android {
         // CI passes -PversionCode=<run number> so every release build can be uploaded to Play.
         versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 1
         versionName = "1.0"
+
+        manifestPlaceholders["admobAppId"] = testAdmobAppId
+        buildConfigField("String", "ADMOB_BANNER_ID", "\"$testAdmobBannerId\"")
     }
 
     signingConfigs {
@@ -46,6 +61,8 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.findByName("release")
+            manifestPlaceholders["admobAppId"] = releaseAdmobAppId ?: testAdmobAppId
+            buildConfigField("String", "ADMOB_BANNER_ID", "\"${releaseAdmobBannerId ?: testAdmobBannerId}\"")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -59,6 +76,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     testOptions {
@@ -106,6 +124,8 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.biometric)
     implementation(libs.androidx.fragment)
+    implementation(libs.play.services.ads)
+    implementation(libs.ump)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
 

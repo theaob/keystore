@@ -9,7 +9,9 @@ import android.os.PersistableBundle
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -19,11 +21,15 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.onurbaykal.keystoremanager.R
+import com.onurbaykal.keystoremanager.ads.Ads
+import com.onurbaykal.keystoremanager.ads.BannerAd
+import com.onurbaykal.keystoremanager.ads.findActivity
 import com.onurbaykal.keystoremanager.vault.showUnlockPrompt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -35,6 +41,7 @@ fun KeystoreApp(viewModel: KeystoreViewModel = viewModel()) {
     BackHandler(enabled = screen != Screen.Home) { viewModel.goHome() }
 
     val context = LocalContext.current
+    val privacyOptionsRequired by Ads.privacyOptionsRequired.collectAsStateWithLifecycle()
     val unlockFor = state.vault.unlockFor
     LaunchedEffect(unlockFor) {
         if (unlockFor != null) {
@@ -69,7 +76,18 @@ fun KeystoreApp(viewModel: KeystoreViewModel = viewModel()) {
                         }
                     }
                 },
+                actions = {
+                    if (screen == Screen.Home && privacyOptionsRequired) {
+                        IconButton(onClick = { context.findActivity()?.let(Ads::showPrivacyOptions) }) {
+                            Icon(Icons.Filled.PrivacyTip, contentDescription = "Ad privacy settings")
+                        }
+                    }
+                },
             )
+        },
+        // Ads only on the home screen, never next to keys or passwords.
+        bottomBar = {
+            if (screen == Screen.Home) BannerAd(Modifier.navigationBarsPadding())
         },
     ) { padding ->
         when (screen) {

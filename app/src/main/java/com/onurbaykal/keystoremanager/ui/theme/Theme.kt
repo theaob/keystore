@@ -8,11 +8,13 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 // A complete green scheme: leaving roles unset falls back to Material's purple/pink baseline.
-private val LightColors = lightColorScheme(
+internal val LightColors = lightColorScheme(
     primary = Color(0xFF2E7D32),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFC8E6C9),
@@ -39,7 +41,7 @@ private val LightColors = lightColorScheme(
     outline = Color(0xFF72796F),
     outlineVariant = Color(0xFFC2C9BD),
 )
-private val DarkColors = darkColorScheme(
+internal val DarkColors = darkColorScheme(
     primary = Color(0xFF81C784),
     onPrimary = Color(0xFF003909),
     primaryContainer = Color(0xFF1B5E20),
@@ -67,6 +69,15 @@ private val DarkColors = darkColorScheme(
     outlineVariant = Color(0xFF424940),
 )
 
+/**
+ * Green for text such as section titles. The light scheme's primary (#2E7D32) is fine for buttons
+ * and icons but only reaches 3.98:1 on tinted cards, below the 4.5:1 WCAG AA needs for text.
+ * Dark and dynamic schemes already pass with their primary.
+ */
+internal val LightAccentText = Color(0xFF1B5E20)
+
+val LocalAccentText = staticCompositionLocalOf { LightAccentText }
+
 @Composable
 fun KeystoreTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -81,5 +92,8 @@ fun KeystoreTheme(
         darkTheme -> DarkColors
         else -> LightColors
     }
-    MaterialTheme(colorScheme = colors, content = content)
+    val accentText = if (colors === LightColors) LightAccentText else colors.primary
+    CompositionLocalProvider(LocalAccentText provides accentText) {
+        MaterialTheme(colorScheme = colors, content = content)
+    }
 }

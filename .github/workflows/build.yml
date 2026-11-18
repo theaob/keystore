@@ -23,7 +23,7 @@ jobs:
         run: ./gradlew :keystore-core:test
 
       - name: Test app logic
-        run: ./gradlew :app:testDebugUnitTest --tests 'com.onurbaykal.keystoremanager.ui.KeystoreViewModelTest'
+        run: ./gradlew :app:testDebugUnitTest --tests 'com.onurbaykal.keystoremanager.ui.KeystoreViewModelTest' --tests 'com.onurbaykal.keystoremanager.ui.theme.ThemeContrastTest'
 
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug

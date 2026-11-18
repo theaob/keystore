@@ -49,6 +49,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import com.onurbaykal.keystoremanager.ui.theme.LocalAccentText
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Visibility
 import com.onurbaykal.keystoremanager.core.KeystoreBackup
 import com.onurbaykal.keystoremanager.core.PasswordGenerator
 import com.onurbaykal.keystoremanager.core.SigningSnippets
@@ -156,13 +162,12 @@ fun DetailsScreen(
         Section("Keystore") {
             InfoRow("Format", keystore.format.displayName)
             InfoRow("Alias", keystore.alias)
-            InfoRow("Store password", details.storePassword ?: "Not known", sensitive = details.storePassword != null)
-            InfoRow("Key password", details.keyPassword ?: "Not known", sensitive = details.keyPassword != null)
+            details.storePassword?.let { SecretRow("Store password", it) } ?: InfoRow("Store password", "Not known")
+            details.keyPassword?.let { SecretRow("Key password", it) } ?: InfoRow("Key password", "Not known")
             details.backup?.let { record ->
-                InfoRow(
+                SecretRow(
                     "Backup passphrase (${record.fileName}, ${dateFormat.format(record.createdAt)})",
                     record.passphrase,
-                    sensitive = true,
                 )
             }
         }
@@ -196,6 +201,11 @@ fun DetailsScreen(
                     keyPassword = details.keyPassword ?: "<key password>",
                 ),
                 sensitive = details.storePassword != null,
+                maskedCode = if (details.storePassword != null) {
+                    SigningSnippets.keystoreProperties(details.fileName, keystore.alias, MASK, MASK)
+                } else {
+                    null
+                },
             )
         }
 
@@ -302,7 +312,12 @@ internal fun BackupDialog(
 private fun Section(title: String, content: @Composable () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                color = LocalAccentText.current,
+                modifier = Modifier.semantics { heading() },
+            )
             content()
         }
     }
@@ -335,13 +350,56 @@ private fun InfoRow(
     }
 }
 
+/**
+ * A secret such as a password: hidden until the user reveals it, so it can't be read over their
+ * shoulder (FLAG_SECURE only stops screenshots). Copy always copies the real value.
+ */
 @Composable
-private fun CodeBlock(label: String, code: String, sensitive: Boolean) {
+private fun SecretRow(label: String, value: String) {
     val context = LocalContext.current
+    var revealed by rememberSaveable(label) { mutableStateOf(false) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.labelMedium)
+            if (revealed) {
+                SelectionContainer { Text(value, style = MaterialTheme.typography.bodyMedium) }
+            } else {
+                Text(
+                    MASK,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.semantics { contentDescription = "$label hidden" },
+                )
+            }
+        }
+        RevealButton(label, revealed) { revealed = !revealed }
+        IconButton(onClick = { copyToClipboard(context, label, value, sensitive = true) }) {
+            Icon(Icons.Filled.ContentCopy, contentDescription = "Copy $label")
+        }
+    }
+}
+
+@Composable
+private fun RevealButton(label: String, revealed: Boolean, onToggle: () -> Unit) {
+    IconButton(onClick = onToggle) {
+        Icon(
+            if (revealed) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+            contentDescription = if (revealed) "Hide $label" else "Show $label",
+        )
+    }
+}
+
+/** A fixed-length mask, so the dots don't give away a secret's length. */
+private const val MASK = "••••••••••••"
+
+/** @param maskedCode shown instead of [code] until revealed; copy always copies [code]. */
+@Composable
+private fun CodeBlock(label: String, code: String, sensitive: Boolean, maskedCode: String? = null) {
+    val context = LocalContext.current
+    var revealed by rememberSaveable(label) { mutableStateOf(false) }
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
         Row {
             Text(
-                code,
+                if (maskedCode != null && !revealed) maskedCode else code,
                 fontFamily = FontFamily.Monospace,
                 style = MaterialTheme.typography.bodySmall,
                 softWrap = false,
@@ -350,8 +408,11 @@ private fun CodeBlock(label: String, code: String, sensitive: Boolean) {
                     .horizontalScroll(rememberScrollState())
                     .padding(12.dp),
             )
-            IconButton(onClick = { copyToClipboard(context, label, code, sensitive) }) {
-                Icon(Icons.Filled.ContentCopy, contentDescription = "Copy $label")
+            Column {
+                IconButton(onClick = { copyToClipboard(context, label, code, sensitive) }) {
+                    Icon(Icons.Filled.ContentCopy, contentDescription = "Copy $label")
+                }
+                if (maskedCode != null) RevealButton(label, revealed) { revealed = !revealed }
             }
         }
     }

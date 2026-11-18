@@ -36,6 +36,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import com.onurbaykal.keystoremanager.ui.theme.LocalAccentText
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
 import com.onurbaykal.keystoremanager.core.KeystoreBackup
 import com.onurbaykal.keystoremanager.core.VaultEntrySummary
 import java.time.ZoneId
@@ -106,8 +109,8 @@ fun HomeScreen(
         Text(
             "Saved in this app",
             style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(top = 8.dp),
+            color = LocalAccentText.current,
+            modifier = Modifier.padding(top = 8.dp).semantics { heading() },
         )
         ErrorText(vault.error)
         if (vault.entries.isEmpty()) {

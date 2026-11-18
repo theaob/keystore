@@ -53,6 +53,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.onurbaykal.keystoremanager.ui.theme.LocalAccentText
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
 import com.onurbaykal.keystoremanager.core.KeyAlgorithm
 import com.onurbaykal.keystoremanager.core.KeystoreFormat
 import com.onurbaykal.keystoremanager.core.ValidationError.Field
@@ -255,7 +258,12 @@ fun FormScreen(
 
 @Composable
 private fun SectionTitle(text: String) {
-    Text(text, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+    Text(
+        text,
+        style = MaterialTheme.typography.titleMedium,
+        color = LocalAccentText.current,
+        modifier = Modifier.semantics { heading() },
+    )
 }
 
 @Composable
